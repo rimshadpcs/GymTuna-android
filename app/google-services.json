@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "856612400371",
+    "project_id": "gymlog-56f16",
+    "storage_bucket": "gymlog-56f16.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:856612400371:android:e82027a2a3e4e99aa3db86",
+        "android_client_info": {
+          "package_name": "com.rimapps.gymlog"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "856612400371-h5kcjsdtstecudv1284s5o7qkquus993.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.rimapps.gymlog",
+            "certificate_hash": "c3ee00ec750d1c74405ffe67e110aca1256a4837"
+          }
+        },
+        {
+          "client_id": "856612400371-d11ud795jtpq5nj4h6o3sbt3vr5luqd0.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAtlVk9JaCq6yGIlyny7cbmlITO---CMLI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "856612400371-d11ud795jtpq5nj4h6o3sbt3vr5luqd0.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
