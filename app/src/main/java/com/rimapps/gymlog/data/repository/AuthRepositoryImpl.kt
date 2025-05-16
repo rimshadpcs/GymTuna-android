@@ -3,7 +3,10 @@ package com.rimapps.gymlog.data.repository
 import android.content.Intent
 import android.content.IntentSender
 import android.util.Log
+import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.GoogleAuthProvider
 import com.rimapps.gymlog.domain.model.User
 import com.rimapps.gymlog.domain.repository.AuthRepository
 import com.rimapps.gymlog.utils.GoogleSignInHelper
@@ -17,7 +20,6 @@ class AuthRepositoryImpl @Inject constructor(
     private val userPreferences: UserPreferences,
     private val googleSignInHelper: GoogleSignInHelper
 ) : AuthRepository {
-
     override suspend fun signInWithGoogle(intentSender: IntentSender): Result<Unit> {
         // This method shouldn't start a new sign-in flow
         // It should just return success since the intentSender will be used by the Activity
@@ -27,7 +29,6 @@ class AuthRepositoryImpl @Inject constructor(
     override suspend fun signInWithGoogleIntent(intent: Intent): Result<Unit> {
         return try {
             Log.d(TAG, "Starting Google sign in process in repository")
-
             // Get credential from Google Sign In
             googleSignInHelper.signInWithIntent(intent)
                 .onSuccess { credential ->
@@ -35,7 +36,6 @@ class AuthRepositoryImpl @Inject constructor(
                     // Wait for Firebase sign in to complete
                     auth.signInWithCredential(credential).await()
                     Log.d(TAG, "Firebase sign in completed")
-
                     // Verify Firebase auth state
                     if (auth.currentUser != null) {
                         Log.d(TAG, "Firebase user verified: ${auth.currentUser?.email}")
@@ -48,7 +48,6 @@ class AuthRepositoryImpl @Inject constructor(
                     Log.e(TAG, "Failed to get Google credential", e)
                     throw e
                 }
-
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Sign in failed in repository", e)
@@ -75,7 +74,6 @@ class AuthRepositoryImpl @Inject constructor(
         Log.d(TAG, "Checking Firebase auth state: $isSignedIn")
         return isSignedIn
     }
-
 
     override suspend fun getCurrentUser(): User? {
         return auth.currentUser?.let { firebaseUser ->

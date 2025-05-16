@@ -46,12 +46,8 @@ class MainActivity : ComponentActivity() {
                 }
             }
             RESULT_CANCELED -> {
-                Log.e("MainActivity", "Sign in was cancelled")
-                Toast.makeText(
-                    this,
-                    "Sign in was cancelled",
-                    Toast.LENGTH_LONG
-                ).show()
+                Log.d("MainActivity", "Sign in was cancelled by user")
+                // Don't show toast for user cancellation
             }
             else -> {
                 Log.e("MainActivity", "Sign in failed with code: $resultCode")
@@ -67,7 +63,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         WindowCompat.setDecorFitsSystemWindows(window, false)
-         val authViewModel: AuthViewModel by viewModels()
+
         setContent {
             GymLogTheme {
                 Surface(
@@ -75,7 +71,7 @@ class MainActivity : ComponentActivity() {
                     color = MaterialTheme.colorScheme.background
                 ) {
                     NavGraph(
-                        authViewModel = authViewModel,
+                        authViewModel = viewModel,  // Use the single viewModel instance
                         onGoogleSignInClick = {
                             lifecycleScope.launch {
                                 try {

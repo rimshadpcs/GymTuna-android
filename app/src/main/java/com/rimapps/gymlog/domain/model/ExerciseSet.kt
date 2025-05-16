@@ -1,10 +1,10 @@
 package com.rimapps.gymlog.domain.model
 
 data class ExerciseSet(
-    val setNumber: Int = 0,
-    val weight: Double = 0.0,
-    val reps: Int = 0,
-    val isCompleted: Boolean = false,
-    val previousWeight: Double? = null,
-    val previousReps: Int? = null
+    val setNumber: Int,
+    var reps: Int = 0,
+    var weight: Double = 0.0,
+    var isCompleted: Boolean = false,
+    var previousReps: Int? = null,
+    var previousWeight: Double? = null
 )

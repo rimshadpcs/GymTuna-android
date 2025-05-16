@@ -16,17 +16,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.rimapps.gymlog.R
 import com.rimapps.gymlog.domain.model.Exercise
 import com.rimapps.gymlog.ui.theme.vag
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateRoutineScreen(
+    routineId: String? = null,  // Add this parameter
     onBack: () -> Unit,
     onRoutineCreated: () -> Unit,
     onAddExercise: () -> Unit,
@@ -34,6 +36,18 @@ fun CreateRoutineScreen(
 ) {
     var routineName by remember { mutableStateOf("") }
     val selectedExercises by viewModel.selectedExercises.collectAsState()
+
+    LaunchedEffect(routineId) {
+        routineId?.let { id ->
+            viewModel.initializeRoutine(id)
+        }
+    }
+
+    LaunchedEffect(viewModel) {
+        viewModel.routineName.collect { name ->
+            routineName = name
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -74,7 +88,9 @@ fun CreateRoutineScreen(
                 enabled = routineName.isNotBlank() && selectedExercises.isNotEmpty(),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color.Black,
-                    contentColor = Color.White
+                    contentColor = Color.White,
+                    disabledContainerColor = Color.LightGray,
+                    disabledContentColor = Color.White
                 ),
                 shape = RoundedCornerShape(8.dp)
             ) {
@@ -86,37 +102,55 @@ fun CreateRoutineScreen(
             }
         }
 
+        // Routine title input - IMPROVED TO MATCH SEARCH FIELD
+        Spacer(modifier = Modifier.height(16.dp))
 
-        // Routine title input
+        // Styled like your search field with border and clean look
         TextField(
             value = routineName,
-            onValueChange = { routineName = it },
+            onValueChange = { newValue ->
+                routineName = newValue
+                viewModel.setRoutineName(newValue) // Call the new function
+            },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 24.dp)
                 .border(1.dp, Color.Black, RoundedCornerShape(12.dp)),
-            placeholder = { Text("Routine title") },
+            placeholder = {
+                Text(
+                    "Routine title",
+                    color = Color.Gray,
+                    style = MaterialTheme.typography.bodyLarge
+                )
+            },
             singleLine = true,
+            textStyle = TextStyle(
+                color = Color.Black,
+                fontSize = 16.sp,
+                fontFamily = vag,
+                fontWeight = FontWeight.Normal
+            ),
             colors = TextFieldDefaults.textFieldColors(
                 containerColor = Color.White,
                 focusedIndicatorColor = Color.Transparent,
-                unfocusedIndicatorColor = Color.Transparent
+                unfocusedIndicatorColor = Color.Transparent,
+                cursorColor = Color.Black
             ),
             shape = RoundedCornerShape(12.dp)
         )
+        Spacer(modifier = Modifier.height(24.dp))
 
-        // Exercise list or empty state
-        if (selectedExercises.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f)
-                    .padding(16.dp),
-                contentAlignment = Alignment.Center
-            ) {
+        // Exercise list or empty state - takes most of the screen space
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxWidth()
+        ) {
+            if (selectedExercises.isEmpty()) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxSize()
                 ) {
                     // Dumbbell icon
                     Icon(
@@ -132,48 +166,49 @@ fun CreateRoutineScreen(
                         text = "Get started by adding an exercise to your routine.",
                         style = MaterialTheme.typography.bodyLarge,
                         color = Color.Gray,
-                        textAlign = TextAlign.Center
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 32.dp)
                     )
                 }
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(selectedExercises) { exercise ->
-                    SelectedExerciseItem(
-                        exercise = exercise,
-                        onRemove = { viewModel.removeExercise(exercise) }
-                    )
+            } else {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(selectedExercises) { exercise ->
+                        SelectedExerciseItem(
+                            exercise = exercise,
+                            onRemove = { viewModel.removeExercise(exercise) }
+                        )
+                    }
                 }
             }
         }
 
-        // Add exercise button
+        // Add exercise button - fixed at bottom with proper padding
         Button(
             onClick = onAddExercise,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 24.dp, vertical = 24.dp),
             colors = ButtonDefaults.buttonColors(
-                containerColor = Color.Black,
-                contentColor = Color.White
+                containerColor = Color.White,
+                contentColor = Color.Black
             ),
-            shape = RoundedCornerShape(12.dp),
-            border = BorderStroke(1.dp, Color.Black)
+            border = BorderStroke(1.dp, Color.Black),
+            shape = RoundedCornerShape(32.dp) // More rounded corners for pill shape
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.Center,
-                modifier = Modifier.padding(8.dp)
+                modifier = Modifier.padding(vertical = 12.dp)
             ) {
                 Icon(
                     imageVector = Icons.Default.Add,
-                    contentDescription = "Add Exercise"
+                    contentDescription = "Add Exercise",
+                    modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
@@ -185,7 +220,6 @@ fun CreateRoutineScreen(
         }
     }
 }
-
 @Composable
 fun SelectedExerciseItem(
     exercise: Exercise,

@@ -1,6 +1,5 @@
 package com.rimapps.gymlog.presentation.auth
 
-import android.content.ContentValues.TAG
 import android.content.Intent
 import android.content.IntentSender
 import android.util.Log
@@ -14,11 +13,10 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import javax.inject.Inject
-import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.launch
+import javax.inject.Inject
 
 @HiltViewModel
 class AuthViewModel @Inject constructor(
@@ -29,23 +27,52 @@ class AuthViewModel @Inject constructor(
     private val _authState = MutableStateFlow<AuthState>(AuthState.Initial)
     val authState = _authState.asStateFlow()
 
+    private val _navigationEvent = Channel<Unit>()
+    val navigationEvent = _navigationEvent.receiveAsFlow()
+
     init {
         checkAuthState()
     }
 
-    private val _navigationEvent = Channel<Unit>()
-    val navigationEvent = _navigationEvent.receiveAsFlow()
+    suspend fun startGoogleSignIn(): IntentSender? {
+        return try {
+            Log.d(TAG, "Starting Google sign in")
+            googleSignInHelper.startSignIn()
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start Google sign in", e)
+            null
+        }
+    }
+
+    fun signInWithGoogleIntent(intent: Intent) {
+        viewModelScope.launch {
+            try {
+                _authState.value = AuthState.Loading
+                Log.d(TAG, "Processing sign in intent")
+
+                authRepository.signInWithGoogleIntent(intent)
+                    .onSuccess {
+                        Log.d(TAG, "Sign in successful")
+                        _authState.value = AuthState.Success
+                        _navigationEvent.send(Unit)
+                    }
+                    .onFailure { e ->
+                        Log.e(TAG, "Sign in failed", e)
+                        _authState.value = AuthState.Error(e.message ?: "Sign in failed")
+                    }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error during sign in", e)
+                _authState.value = AuthState.Error(e.message ?: "Sign in failed")
+            }
+        }
+    }
 
     private fun checkAuthState() {
         viewModelScope.launch {
             try {
                 Log.d(TAG, "Checking initial auth state")
-
                 val isFirebaseSignedIn = authRepository.isUserSignedIn()
-                Log.d(TAG, "Firebase signed in: $isFirebaseSignedIn")
-
                 val isSignedInPref = userPreferences.isUserSignedIn.first()
-                Log.d(TAG, "Preferences signed in: $isSignedInPref")
 
                 if (isFirebaseSignedIn && isSignedInPref) {
                     Log.d(TAG, "User is authenticated, navigating to home")
@@ -64,6 +91,7 @@ class AuthViewModel @Inject constructor(
             }
         }
     }
+
     fun signOut() {
         viewModelScope.launch {
             try {
@@ -78,42 +106,6 @@ class AuthViewModel @Inject constructor(
             }
         }
     }
-
-    suspend fun startGoogleSignIn(): IntentSender? {
-        return try {
-            Log.d(TAG, "Starting Google sign in")
-            val intentSender = googleSignInHelper.startSignIn()
-            // Note: We don't call authRepository.signInWithGoogle here anymore
-            intentSender
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to start Google sign in", e)
-            null
-        }
-    }
-
-    fun signInWithGoogleIntent(intent: Intent) {
-        viewModelScope.launch {
-            try {
-                Log.d(TAG, "Processing sign in intent")
-                _authState.value = AuthState.Loading
-
-                authRepository.signInWithGoogleIntent(intent)
-                    .onSuccess {
-                        Log.d(TAG, "Sign in successful, triggering navigation")
-                        _authState.value = AuthState.Success
-                        _navigationEvent.send(Unit)
-                    }
-                    .onFailure { e ->
-                        Log.e(TAG, "Sign in failed", e)
-                        _authState.value = AuthState.Error(e.message)
-                    }
-            } catch (e: Exception) {
-                Log.e(TAG, "Sign in exception", e)
-                _authState.value = AuthState.Error(e.message)
-            }
-        }
-    }
-
 
     companion object {
         private const val TAG = "AuthViewModel"

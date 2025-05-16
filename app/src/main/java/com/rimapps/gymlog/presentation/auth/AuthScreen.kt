@@ -45,7 +45,6 @@ import com.rimapps.gymlog.domain.model.AuthState
 import com.rimapps.gymlog.ui.theme.vag
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-
 @Composable
 fun AuthScreen(
     viewModel: AuthViewModel,
@@ -54,6 +53,11 @@ fun AuthScreen(
 ) {
     val authState by viewModel.authState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+
+    // Debug log for state changes
+    LaunchedEffect(authState) {
+        Log.d("AuthScreen", "Auth state changed to: $authState")
+    }
 
     // Collect navigation events
     LaunchedEffect(Unit) {
@@ -72,82 +76,79 @@ fun AuthScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
+        Image(
+            painter = painterResource(id = R.drawable.gymlogauthpage),
+            contentDescription = "App Logo",
+            modifier = Modifier.size(360.dp)
+        )
+
+        Spacer(modifier = Modifier.height(48.dp))
+
+        Text(
+            text = "GYM LOG",
+            style = MaterialTheme.typography.headlineMedium,
+            color = Color.Black,
+            fontWeight = FontWeight.Bold,
+            fontFamily = vag
+        )
+
+        Spacer(modifier = Modifier.height(48.dp))
+
         when (authState) {
-            is AuthState.Loading, is AuthState.Success -> {
+            is AuthState.Loading -> {
                 CircularProgressIndicator(
-                    modifier = Modifier.size(50.dp),
+                    modifier = Modifier.size(56.dp),
                     color = MaterialTheme.colorScheme.primary
                 )
             }
-
             is AuthState.Error -> {
-                LaunchedEffect(authState) {
-                    Toast.makeText(
-                        context,
-                        (authState as AuthState.Error).message ?: "Unknown error",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                }
-
-                Text(
-                    text = (authState as AuthState.Error).message ?: "Unknown error",
-                    color = Color.Red,
-                    modifier = Modifier.padding(16.dp)
-                )
-            }
-
-            is AuthState.Initial -> {
-                Image(
-                    painter = painterResource(id = R.drawable.gymlogauthpage),
-                    contentDescription = "App Logo",
-                    modifier = Modifier.size(360.dp)
-                )
-
-                Spacer(modifier = Modifier.height(48.dp))
-
-                Text(
-                    text = "GYM LOG",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = Color.Black,
-                    fontWeight = FontWeight.Bold,
-                    fontFamily = vag
-                )
-
-                Spacer(modifier = Modifier.height(48.dp))
-
-                Button(
-                    onClick = {
-                        Log.d("AuthScreen", "Sign in button clicked")
-                        onGoogleSignInClick()
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(56.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White,
-                        contentColor = Color.Black
-                    ),
-                    border = BorderStroke(1.dp, Color.Black),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Row(
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.google_ic),
-                            contentDescription = "Google Icon",
-                            tint = Color.Unspecified
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            "Sign in with Google",
-                            fontFamily = vag,
-                            fontWeight = FontWeight.SemiBold,
-                        )
+                val errorMessage = (authState as AuthState.Error).message
+                if (!errorMessage?.contains("cancelled", ignoreCase = true)!!) {
+                    LaunchedEffect(errorMessage) {
+                        Toast.makeText(context, errorMessage, Toast.LENGTH_SHORT).show()
                     }
                 }
+                SignInButton(onGoogleSignInClick)
             }
+            else -> {
+                SignInButton(onGoogleSignInClick)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SignInButton(onClick: () -> Unit) {
+    Button(
+        onClick = {
+            Log.d("AuthScreen", "Sign in button clicked")
+            onClick()
+        },
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(56.dp),
+        colors = ButtonDefaults.buttonColors(
+            containerColor = Color.White,
+            contentColor = Color.Black
+        ),
+        border = BorderStroke(1.dp, Color.Black),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                painter = painterResource(id = R.drawable.google_ic),
+                contentDescription = "Google Icon",
+                tint = Color.Unspecified
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                "Sign in with Google",
+                fontFamily = vag,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
     }
 }

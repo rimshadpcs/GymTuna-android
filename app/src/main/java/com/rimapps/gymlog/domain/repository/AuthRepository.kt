@@ -2,6 +2,7 @@ package com.rimapps.gymlog.domain.repository
 
 import android.content.Intent
 import android.content.IntentSender
+import com.google.firebase.auth.FirebaseUser
 import com.rimapps.gymlog.domain.model.User
 
 interface AuthRepository {

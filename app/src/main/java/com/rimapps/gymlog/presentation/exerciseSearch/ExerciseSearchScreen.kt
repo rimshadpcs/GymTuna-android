@@ -22,6 +22,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rimapps.gymlog.R
 import com.rimapps.gymlog.domain.model.Exercise
+import com.rimapps.gymlog.domain.model.ExerciseSet
+import com.rimapps.gymlog.domain.model.WorkoutExercise
 import com.rimapps.gymlog.presentation.exerciseSearch.ExerciseSearchViewModel
 import com.rimapps.gymlog.ui.theme.vag
 
@@ -32,6 +34,7 @@ fun ExerciseSearchScreen(
     viewModel: ExerciseSearchViewModel = hiltViewModel(),
     onExerciseClick: (Exercise) -> Unit
 ) {
+
     var searchQuery by remember { mutableStateOf("") }
     val exercises by viewModel.exercises.collectAsStateWithLifecycle()
 
@@ -87,7 +90,7 @@ fun ExerciseSearchScreen(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             items(exercises.sortedBy { it.name }) { exercise ->
-                ExerciseItem(
+                ExerciseSearchItem(
                     exercise = exercise,
                     onClick = { onExerciseClick(exercise) }
                 )
@@ -95,10 +98,8 @@ fun ExerciseSearchScreen(
         }
     }
 }
-
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExerciseItem(
+fun ExerciseSearchItem( // Renamed to avoid confusion
     exercise: Exercise,
     onClick: () -> Unit
 ) {

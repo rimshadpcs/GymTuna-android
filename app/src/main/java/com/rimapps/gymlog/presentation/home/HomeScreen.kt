@@ -34,34 +34,49 @@ import com.rimapps.gymlog.ui.theme.vag
 fun HomeScreen(
     onSignOut: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel(),
-    onStartWorkout: (String?) -> Unit,
-    onNavigateToSearch: () -> Unit // New parameter
+    onStartEmptyWorkout: () -> Unit,
+    onStartRoutine: (String) -> Unit,
+    onEditRoutine: (String) -> Unit,
+    onNewRoutine: () -> Unit,
+    onNavigateToSearch: () -> Unit,
+    onNavigateToSettings: () -> Unit
 ) {
     val workoutState by viewModel.workoutState.collectAsStateWithLifecycle()
 
-    Column(
+ Column(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.White)
             .padding(24.dp)
             .systemBarsPadding()
     ) {
-        TopBar()
-        QuickStartSection(
-            onStartWorkout = onStartWorkout,
-            onSearchExercises = onNavigateToSearch
+     TopBar(onSettingsClick = onNavigateToSettings)
+
+     QuickStartSection(
+            onStartEmptyWorkout = onStartEmptyWorkout
         )
 
-        // Update RoutinesSection
         RoutinesSection(
-            onNewRoutine = { onStartWorkout(null) },
-            onStartWorkout = onStartWorkout // Pass the onStartWorkout function
+            onNewRoutine = onNewRoutine
         )
-        WorkoutsList(workoutState, onStartWorkout)
+
+        // Fixed WorkoutsList call with proper parameters
+     WorkoutsList(
+         workoutState = workoutState,
+         onStartWorkout = { workoutId ->
+             if (workoutId != null) {
+                 onStartRoutine(workoutId)
+             }
+         },
+         onDuplicateWorkout = { workout -> viewModel.duplicateWorkout(workout) },
+         onEditWorkout = { workout -> onEditRoutine(workout.id) },
+         onDeleteWorkout = { workout -> viewModel.deleteWorkout(workout.id) },
+         viewModel = viewModel
+     )
     }
 }
 @Composable
-fun TopBar() {
+fun TopBar(onSettingsClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -93,26 +108,6 @@ fun TopBar() {
             horizontalArrangement = Arrangement.End,
             modifier = Modifier.padding(end = 4.dp)
         ) {
-            // Theme Toggle Button
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-
-                    .padding(4.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                IconButton(
-                    onClick = { /* Toggle theme */ },
-                    modifier = Modifier.size(28.dp)
-                ) {
-                    Image(
-                        painter = painterResource(id = R.drawable.moon),
-                        contentDescription = "User Settings",
-                        modifier = Modifier.size(28.dp)
-                    )
-                }
-            }
-
             Spacer(modifier = Modifier.width(8.dp))
 
             // Settings Button
@@ -128,12 +123,12 @@ fun TopBar() {
                 contentAlignment = Alignment.Center
             ) {
                 IconButton(
-                    onClick = { /* Settings */ },
+                    onClick = onSettingsClick,
                     modifier = Modifier.size(28.dp)
                 ) {
                     Image(
                         painter = painterResource(id = R.drawable.usersetting),
-                        contentDescription = "User Settings",
+                        contentDescription = "Settings",
                         modifier = Modifier.size(24.dp)
                     )
                 }
@@ -142,9 +137,7 @@ fun TopBar() {
     }
 }
 @Composable
-fun QuickStartSection(
-    onStartWorkout: (String?) -> Unit,
-    onSearchExercises: () -> Unit) {
+fun QuickStartSection(onStartEmptyWorkout: () -> Unit) {
     Text(
         text = "Quick Start",
         style = MaterialTheme.typography.titleLarge,
@@ -154,7 +147,7 @@ fun QuickStartSection(
     )
 
     Button(
-        onClick = {onStartWorkout(null) },
+        onClick = { onStartEmptyWorkout() },
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp),
@@ -182,11 +175,8 @@ fun QuickStartSection(
         }
     }
 }
-
 @Composable
-fun RoutinesSection(
-    onNewRoutine: () -> Unit,
-    onStartWorkout: (String?) -> Unit,) {
+fun RoutinesSection(onNewRoutine: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -207,7 +197,7 @@ fun RoutinesSection(
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Button(
-            onClick = {onStartWorkout(null) },
+            onClick = { onNewRoutine() },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(56.dp),
@@ -236,15 +226,24 @@ fun RoutinesSection(
             }
         }
     }
-}@Composable
+}
+@Composable
 private fun WorkoutsList(
     workoutState: WorkoutState,
-    onStartWorkout: (String?) -> Unit
+    onStartWorkout: (String?) -> Unit,
+    onDuplicateWorkout: (Workout) -> Unit,
+    onEditWorkout: (Workout) -> Unit,
+    onDeleteWorkout: (Workout) -> Unit,
+    viewModel: HomeViewModel
 ) {
+    // Adjustable dimensions for the list
+    val listHorizontalPadding = 4.dp  // Match this with parent padding
+    val spaceBetweenItems = 8.dp       // Adjust this for space between workout items
+
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 16.dp),
+            .padding(horizontal = listHorizontalPadding, vertical = 16.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -252,59 +251,68 @@ private fun WorkoutsList(
             text = "My Routines",
             style = MaterialTheme.typography.titleLarge,
             color = Color.Black,
+            fontFamily = vag,
             fontWeight = FontWeight.SemiBold
         )
     }
 
-    when (workoutState) {
-        is WorkoutState.Loading -> {
-            Box(
-                modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator(color = Color.Black)
-            }
-        }
+    when (val state = workoutState) {
         is WorkoutState.Success -> {
-            if (workoutState.workouts.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 32.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "No saved routines yet. Create one to get started!",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = Color.Gray,
-                        textAlign = TextAlign.Center
-                    )
-                }
+            if (state.workouts.isEmpty()) {
+                EmptyRoutinesState()
             } else {
                 LazyColumn(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = listHorizontalPadding),
+                    verticalArrangement = Arrangement.spacedBy(spaceBetweenItems)
                 ) {
-                    items(workoutState.workouts) { workout ->
+                    items(state.workouts) { workout ->
                         WorkoutItem(
                             workout = workout,
-                            onStartClick = { onStartWorkout(workout.id) }
+                            onStartClick = { onStartWorkout(workout.id) },
+                            onDuplicate = onDuplicateWorkout,
+                            onEdit = onEditWorkout,
+                            onDelete = onDeleteWorkout
                         )
                     }
                 }
             }
         }
-        is WorkoutState.Error -> {
-            Box(
-                modifier = Modifier.fillMaxWidth(),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = workoutState.message,
-                    color = Color.Red
-                )
-            }
-        }
-        else -> Unit
+        // ... rest of your state handling
+        else -> {}
     }
 }
+
+@Composable
+fun EmptyRoutinesState() {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Image(
+            painter = painterResource(id = R.drawable.gym),
+            contentDescription = "No routines",
+            modifier = Modifier.size(64.dp),
+            colorFilter = ColorFilter.tint(Color.Gray)
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "No routines yet",
+            style = MaterialTheme.typography.titleMedium,
+            color = Color.Gray,
+            fontFamily = vag,
+            fontWeight = FontWeight.Medium
+        )
+        Text(
+            text = "Create a new routine to get started",
+            style = MaterialTheme.typography.bodyMedium,
+            color = Color.Gray,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+

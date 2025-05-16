@@ -7,26 +7,22 @@ import android.util.Log
 import com.google.android.gms.auth.api.identity.BeginSignInRequest
 import com.google.android.gms.auth.api.identity.Identity
 import com.google.android.gms.auth.api.identity.SignInClient
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInClient
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import com.google.android.gms.common.GoogleApiAvailability
-import com.google.android.gms.common.api.ApiException
 import com.google.firebase.auth.AuthCredential
 import com.google.firebase.auth.GoogleAuthProvider
 import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 
+
+
 class GoogleSignInHelper @Inject constructor(
     private val context: Context
 ) {
     private val webClientId = "856612400371-d11ud795jtpq5nj4h6o3sbt3vr5luqd0.apps.googleusercontent.com"
+    private val oneTapClient: SignInClient = Identity.getSignInClient(context)
 
     init {
-        Log.d(TAG, "Initializing with web client ID: $webClientId")
+        Log.d(TAG, "Initializing GoogleSignInHelper with client ID: $webClientId")
     }
-
-    private val oneTapClient: SignInClient = Identity.getSignInClient(context)
 
     private val signInRequest = BeginSignInRequest.builder()
         .setGoogleIdTokenRequestOptions(
@@ -41,16 +37,12 @@ class GoogleSignInHelper @Inject constructor(
 
     suspend fun startSignIn(): IntentSender? {
         return try {
-            Log.d(TAG, "Starting sign-in process")
+            Log.d(TAG, "Attempting to start sign-in")
             val result = oneTapClient.beginSignIn(signInRequest).await()
-            Log.d(TAG, "Sign-in result: $result")
+            Log.d(TAG, "Got sign-in result, returning intent sender")
             result.pendingIntent.intentSender
         } catch (e: Exception) {
             Log.e(TAG, "Error starting sign-in", e)
-            when (e) {
-                is ApiException -> Log.e(TAG, "ApiException status code: ${e.statusCode}")
-                else -> Log.e(TAG, "Unknown exception type: ${e.javaClass.simpleName}")
-            }
             null
         }
     }
@@ -77,9 +69,11 @@ class GoogleSignInHelper @Inject constructor(
 
     suspend fun signOut() {
         try {
+            Log.d(TAG, "Signing out of Google")
             oneTapClient.signOut().await()
+            Log.d(TAG, "Successfully signed out of Google")
         } catch (e: Exception) {
-            Log.e(TAG, "Error signing out", e)
+            Log.e(TAG, "Error signing out of Google", e)
             throw e
         }
     }

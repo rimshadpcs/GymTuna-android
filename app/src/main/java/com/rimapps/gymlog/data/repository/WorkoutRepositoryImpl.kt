@@ -2,11 +2,13 @@ package com.rimapps.gymlog.data.repository
 
 import android.util.Log
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import com.rimapps.gymlog.data.local.dao.ExerciseDao
 import com.rimapps.gymlog.data.local.entity.ExerciseEntity
 import com.rimapps.gymlog.data.local.entity.toExercise
 import com.rimapps.gymlog.domain.model.Exercise
 import com.rimapps.gymlog.domain.model.Workout
+import com.rimapps.gymlog.domain.repository.AuthRepository
 import com.rimapps.gymlog.domain.repository.WorkoutRepository
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.channels.awaitClose
@@ -15,6 +17,7 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -23,8 +26,15 @@ private const val TAG = "WorkoutRepository"
 @Singleton
 class WorkoutRepositoryImpl @Inject constructor(
     private val firestore: FirebaseFirestore,
-    private val exerciseDao: ExerciseDao
+    private val exerciseDao: ExerciseDao,
+    private val authRepository: AuthRepository
 ) : WorkoutRepository {
+
+    companion object {
+        private const val TAG = "WorkoutRepository"
+    }
+
+    private val workoutsCollection = firestore.collection("user_workouts")
     init {
         Log.d(TAG, "⭐ GymLogApp Initialization Started ⭐")
 
@@ -193,59 +203,48 @@ class WorkoutRepositoryImpl @Inject constructor(
     }
 
     override suspend fun getWorkouts(userId: String): Flow<List<Workout>> = callbackFlow {
-        // This is where the issue is - it's automatically creating workouts from exercises
-        // Let's modify this to only return user-created workouts
-
         val subscription = firestore.collection("user_workouts")
             .document(userId)
             .collection("routines")
+            .orderBy("createdAt") // Order by name instead of createdAt
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
-                    Log.e(TAG, "Error getting workouts", error)
-                    trySend(emptyList())
+                    Log.e(TAG, "Error fetching workouts", error)
                     return@addSnapshotListener
                 }
 
-                if (snapshot == null || snapshot.isEmpty) {
-                    trySend(emptyList())
-                    return@addSnapshotListener
-                }
-
-                val workouts = snapshot.documents.mapNotNull { doc ->
+                val workouts = snapshot?.documents?.mapNotNull { doc ->
                     try {
-                        val exercisesList = doc.get("exercises") as? List<Map<String, Any>> ?: emptyList()
+                        val data = doc.data ?: return@mapNotNull null
 
-                        val exercises = exercisesList.mapNotNull { exerciseMap ->
-                            try {
-                                Exercise(
-                                    name = exerciseMap["name"] as? String ?: return@mapNotNull null,
-                                    equipment = exerciseMap["equipment"] as? String ?: "",
-                                    muscleGroup = exerciseMap["muscleGroup"] as? String ?: "",
-                                    defaultReps = (exerciseMap["defaultReps"] as? Long)?.toInt() ?: 15,
-                                    defaultSets = (exerciseMap["defaultSets"] as? Long)?.toInt() ?: 3,
-                                    isBodyweight = exerciseMap["isBodyweight"] as? Boolean ?: false,
-                                    usesWeight = exerciseMap["usesWeight"] as? Boolean ?: true
-                                )
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Error mapping exercise in workout", e)
-                                null
-                            }
-                        }
+                        // Map exercises list
+                        val exercisesList = (data["exercises"] as? List<Map<String, Any>>)?.mapNotNull { exerciseMap ->
+                            Exercise(
+                                id = exerciseMap["id"] as? String ?: "",
+                                name = exerciseMap["name"] as? String ?: return@mapNotNull null,
+                                equipment = exerciseMap["equipment"] as? String ?: "",
+                                muscleGroup = exerciseMap["muscleGroup"] as? String ?: "",
+                                defaultReps = (exerciseMap["defaultReps"] as? Long)?.toInt() ?: 15,
+                                defaultSets = (exerciseMap["defaultSets"] as? Long)?.toInt() ?: 3,
+                                isBodyweight = exerciseMap["isBodyweight"] as? Boolean ?: false,
+                                usesWeight = exerciseMap["usesWeight"] as? Boolean ?: true,
+                                description = exerciseMap["description"] as? String ?: ""
+                            )
+                        } ?: emptyList()
 
                         Workout(
-                            id = doc.id,
-                            name = doc.getString("name") ?: "Unnamed Workout",
-                            exercises = exercises,
+                            id = doc.id, // This will now be the formatted name
+                            name = data["name"] as? String ?: "",
                             userId = userId,
-                            createdAt = doc.getLong("createdAt") ?: System.currentTimeMillis()
+                            exercises = exercisesList,
+                            createdAt = data["createdAt"] as? Long ?: System.currentTimeMillis()
                         )
                     } catch (e: Exception) {
-                        Log.e(TAG, "Error mapping workout", e)
+                        Log.e(TAG, "Error mapping workout document", e)
                         null
                     }
-                }
+                } ?: emptyList()
 
-                Log.d(TAG, "Sending ${workouts.size} user workouts")
                 trySend(workouts)
             }
 
@@ -253,36 +252,119 @@ class WorkoutRepositoryImpl @Inject constructor(
     }
 
 
-    override suspend fun createWorkout(workout: Workout) {
-        val workoutData = hashMapOf(
-            "name" to workout.name,
-            "userId" to workout.userId,
-            "createdAt" to workout.createdAt,
-            "exercises" to workout.exercises.map { exercise ->
-                hashMapOf(
-                    "name" to exercise.name,
-                    "equipment" to exercise.equipment,
-                    "muscleGroup" to exercise.muscleGroup,
-                    "defaultReps" to exercise.defaultReps,
-                    "defaultSets" to exercise.defaultSets,
-                    "isBodyweight" to exercise.isBodyweight,
-                    "usesWeight" to exercise.usesWeight
-                )
-            }
-        )
+    override suspend fun getWorkoutById(workoutId: String): Workout? {
+        return try {
+            val userId =
+                authRepository.getCurrentUser()?.uid ?: throw Exception("User not authenticated")
+            Log.d(TAG, "Fetching workout with ID: $workoutId for user: $userId")
 
-        firestore.collection("user_workouts")
-            .document(workout.userId)
-            .collection("routines")
-            .document(workout.id)
-            .set(workoutData)
+            val document = firestore.collection("user_workouts")
+                .document(userId)
+                .collection("routines")
+                .document(workoutId)
+                .get()
+                .await()
+
+            if (!document.exists()) {
+                Log.d(TAG, "No workout found with ID: $workoutId")
+                return null
+            }
+
+            val data = document.data
+            if (data == null) {
+                Log.d(TAG, "Workout data is null for ID: $workoutId")
+                return null
+            }
+
+            // Map the exercises field
+            val exercisesList =
+                (data["exercises"] as? List<Map<String, Any>>)?.mapNotNull { exerciseMap ->
+                    try {
+                        Exercise(
+                            id = exerciseMap["id"] as? String ?: "",
+                            name = exerciseMap["name"] as? String ?: return@mapNotNull null,
+                            equipment = exerciseMap["equipment"] as? String ?: "",
+                            muscleGroup = exerciseMap["muscleGroup"] as? String ?: "",
+                            defaultReps = (exerciseMap["defaultReps"] as? Long)?.toInt() ?: 15,
+                            defaultSets = (exerciseMap["defaultSets"] as? Long)?.toInt() ?: 3,
+                            isBodyweight = exerciseMap["isBodyweight"] as? Boolean ?: false,
+                            usesWeight = exerciseMap["usesWeight"] as? Boolean ?: true,
+                            description = exerciseMap["description"] as? String ?: ""
+                        )
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error mapping exercise", e)
+                        null
+                    }
+                } ?: emptyList()
+
+            Log.d(TAG, "Successfully mapped ${exercisesList.size} exercises")
+
+            Workout(
+                id = document.id,
+                name = data["name"] as? String ?: "",
+                userId = userId,
+                exercises = exercisesList,
+                createdAt = data["createdAt"] as? Long ?: System.currentTimeMillis()
+            ).also {
+                Log.d(TAG, "Created workout object: ${it.name} with ${it.exercises.size} exercises")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching workout", e)
+            null
+        }
+    }
+
+
+    override suspend fun createWorkout(workout: Workout) {
+        try {
+            val userId = authRepository.getCurrentUser()?.uid ?: throw Exception("User not authenticated")
+
+            // Format the document ID from the workout name
+            val docId = workout.name.toLowerCase()
+                .replace(" ", "_")
+                .replace(Regex("[^a-z0-9_]"), "") // Remove any special characters
+
+            // Create the workout document in the user's routines subcollection
+            firestore.collection("user_workouts")
+                .document(userId)
+                .collection("routines")
+                .document(docId) // Use the formatted name as document ID
+                .set(
+                    mapOf(
+                        "name" to workout.name,
+                        "exercises" to workout.exercises,
+                        "createdAt" to workout.createdAt,
+                        "userId" to userId
+                    )
+                )
+                .await()
+
+
+            Log.d(TAG, "Successfully created workout: ${workout.name}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error creating workout", e)
+            throw e
+        }
     }
     override suspend fun updateWorkout(workout: Workout) {
         TODO("Not yet implemented")
     }
 
     override suspend fun deleteWorkout(workoutId: String) {
-        TODO("Not yet implemented")
+        try {
+            val userId = authRepository.getCurrentUser()?.uid ?: throw Exception("User not authenticated")
+
+            firestore.collection("user_workouts")
+                .document(userId)
+                .collection("routines")
+                .document(workoutId)
+                .delete()
+                .await()
+
+        } catch (e: Exception) {
+            Log.e(TAG, "Error deleting workout", e)
+            throw e
+        }
     }
 
     override fun searchExercises(query: String): Flow<List<Exercise>> {
@@ -329,5 +411,22 @@ class WorkoutRepositoryImpl @Inject constructor(
                 entities.map { it.toExercise() }
                     .also { Log.d(TAG, "Got ${it.size} exercises from Room") }
             }
+    }
+    private fun mapToExercise(exerciseMap: Map<String, Any>): Exercise? {
+        return try {
+            Exercise(
+                id = exerciseMap["id"] as? String ?: "",
+                name = exerciseMap["name"] as? String ?: return null,
+                equipment = exerciseMap["equipment"] as? String ?: "",
+                muscleGroup = exerciseMap["muscleGroup"] as? String ?: "",
+                defaultReps = (exerciseMap["defaultReps"] as? Long)?.toInt() ?: 15,
+                defaultSets = (exerciseMap["defaultSets"] as? Long)?.toInt() ?: 3,
+                isBodyweight = exerciseMap["isBodyweight"] as? Boolean ?: false,
+                usesWeight = exerciseMap["usesWeight"] as? Boolean ?: true,
+                description = exerciseMap["description"] as? String ?: ""
+            )
+        } catch (e: Exception) {
+            null
+        }
     }
 }

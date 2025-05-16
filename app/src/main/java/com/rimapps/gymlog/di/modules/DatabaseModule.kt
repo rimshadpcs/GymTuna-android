@@ -24,7 +24,7 @@ object DatabaseModule {
             GymLogDatabase::class.java,
             "gymlog.db"
         )
-            .fallbackToDestructiveMigration() // This will recreate tables if schema changed
+            .fallbackToDestructiveMigration()
             .build()
     }
 
