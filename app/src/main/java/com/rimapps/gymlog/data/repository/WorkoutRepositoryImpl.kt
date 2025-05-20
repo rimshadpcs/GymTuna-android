@@ -1,16 +1,23 @@
 package com.rimapps.gymlog.data.repository
 
+import android.os.Build
 import android.util.Log
+import androidx.annotation.RequiresApi
+import com.google.firebase.firestore.Filter
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
+import com.google.firebase.firestore.SetOptions
 import com.rimapps.gymlog.data.local.dao.ExerciseDao
 import com.rimapps.gymlog.data.local.entity.ExerciseEntity
 import com.rimapps.gymlog.data.local.entity.toExercise
 import com.rimapps.gymlog.domain.model.Exercise
+import com.rimapps.gymlog.domain.model.WeeklyCalendarDay
 import com.rimapps.gymlog.domain.model.Workout
 import com.rimapps.gymlog.domain.repository.AuthRepository
 import com.rimapps.gymlog.domain.repository.WorkoutRepository
+import com.rimapps.gymlog.utils.RoutineColors
 import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -18,6 +25,12 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import java.time.DayOfWeek
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZoneOffset
+import java.time.temporal.TemporalAdjusters
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -206,7 +219,7 @@ class WorkoutRepositoryImpl @Inject constructor(
         val subscription = firestore.collection("user_workouts")
             .document(userId)
             .collection("routines")
-            .orderBy("createdAt") // Order by name instead of createdAt
+            .orderBy("createdAt")
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     Log.e(TAG, "Error fetching workouts", error)
@@ -233,11 +246,13 @@ class WorkoutRepositoryImpl @Inject constructor(
                         } ?: emptyList()
 
                         Workout(
-                            id = doc.id, // This will now be the formatted name
+                            id = doc.id,
                             name = data["name"] as? String ?: "",
                             userId = userId,
                             exercises = exercisesList,
-                            createdAt = data["createdAt"] as? Long ?: System.currentTimeMillis()
+                            createdAt = data["createdAt"] as? Long ?: System.currentTimeMillis(),
+                            colorHex = data["colorHex"] as? String,
+                            lastPerformed = data["lastPerformed"] as? Long
                         )
                     } catch (e: Exception) {
                         Log.e(TAG, "Error mapping workout document", e)
@@ -251,103 +266,126 @@ class WorkoutRepositoryImpl @Inject constructor(
         awaitClose { subscription.remove() }
     }
 
-
     override suspend fun getWorkoutById(workoutId: String): Workout? {
         return try {
-            val userId =
-                authRepository.getCurrentUser()?.uid ?: throw Exception("User not authenticated")
-            Log.d(TAG, "Fetching workout with ID: $workoutId for user: $userId")
+            val userId = authRepository.getCurrentUser()?.uid
+                ?: throw Exception("User not authenticated")
 
-            val document = firestore.collection("user_workouts")
+            val doc = firestore.collection("user_workouts")
                 .document(userId)
                 .collection("routines")
                 .document(workoutId)
                 .get()
                 .await()
 
-            if (!document.exists()) {
-                Log.d(TAG, "No workout found with ID: $workoutId")
-                return null
-            }
+            if (!doc.exists()) return null
+            val data = doc.data ?: return null
 
-            val data = document.data
-            if (data == null) {
-                Log.d(TAG, "Workout data is null for ID: $workoutId")
-                return null
-            }
-
-            // Map the exercises field
-            val exercisesList =
-                (data["exercises"] as? List<Map<String, Any>>)?.mapNotNull { exerciseMap ->
-                    try {
-                        Exercise(
-                            id = exerciseMap["id"] as? String ?: "",
-                            name = exerciseMap["name"] as? String ?: return@mapNotNull null,
-                            equipment = exerciseMap["equipment"] as? String ?: "",
-                            muscleGroup = exerciseMap["muscleGroup"] as? String ?: "",
-                            defaultReps = (exerciseMap["defaultReps"] as? Long)?.toInt() ?: 15,
-                            defaultSets = (exerciseMap["defaultSets"] as? Long)?.toInt() ?: 3,
-                            isBodyweight = exerciseMap["isBodyweight"] as? Boolean ?: false,
-                            usesWeight = exerciseMap["usesWeight"] as? Boolean ?: true,
-                            description = exerciseMap["description"] as? String ?: ""
-                        )
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Error mapping exercise", e)
-                        null
-                    }
-                } ?: emptyList()
-
-            Log.d(TAG, "Successfully mapped ${exercisesList.size} exercises")
+            val exercises = (data["exercises"] as? List<Map<String, Any>>)
+                ?.mapNotNull(::mapToExercise) ?: emptyList()
 
             Workout(
-                id = document.id,
-                name = data["name"] as? String ?: "",
-                userId = userId,
-                exercises = exercisesList,
-                createdAt = data["createdAt"] as? Long ?: System.currentTimeMillis()
-            ).also {
-                Log.d(TAG, "Created workout object: ${it.name} with ${it.exercises.size} exercises")
-            }
+                id            = doc.id,
+                name          = data["name"]        as? String ?: "",
+                userId        = userId,
+                exercises     = exercises,
+                createdAt     = data["createdAt"]   as? Long   ?: System.currentTimeMillis(),
+                colorHex      = data["colorHex"]    as? String,    // <- stays intact
+                lastPerformed = data["lastPerformed"] as? Long
+            )
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching workout", e)
             null
         }
     }
-
-
     override suspend fun createWorkout(workout: Workout) {
+        val userId = authRepository.getCurrentUser()?.uid
+            ?: throw Exception("User not authenticated")
+
+        val usedColours = firestore
+            .collection("user_workouts")
+            .document(userId)
+            .collection("routines")
+            .get()
+            .await()
+            .documents
+            .mapNotNull { it.getString("colorHex") }
+
+        // 1-b  choose the first colour that is NOT in use
+        val colorHex = workout.colorHex ?: run {
+            RoutineColors.colorOptions
+                .firstOrNull { it.hex !in usedColours }
+                ?.hex
+            // if all seven are taken, just cycle in order
+                ?: RoutineColors.byIndex(usedColours.size)
+        }
+
+        val docId = workout.name
+            .lowercase()
+            .replace(" ", "_")
+            .replace(Regex("[^a-z0-9_]"), "")
+
+        firestore.collection("user_workouts")
+            .document(userId)
+            .collection("routines")
+            .document(docId)
+            .set(
+                mapOf(
+                    "name"          to workout.name,
+                    "exercises"     to workout.exercises,
+                    "createdAt"     to workout.createdAt,
+                    "userId"        to userId,
+                    "colorHex"      to colorHex,
+                    "lastPerformed" to workout.lastPerformed
+                )
+            )
+            .await()
+
+        Log.d(TAG, "Created routine ${workout.name} with colour $colorHex")
+    }
+
+
+    override suspend fun updateWorkout(workout: Workout) {
         try {
             val userId = authRepository.getCurrentUser()?.uid ?: throw Exception("User not authenticated")
+            Log.d(TAG, "Updating workout: ${workout.id} for user: $userId")
 
-            // Format the document ID from the workout name
-            val docId = workout.name.toLowerCase()
-                .replace(" ", "_")
-                .replace(Regex("[^a-z0-9_]"), "") // Remove any special characters
+            // Map exercises to the format expected by Firestore
+            val exercisesData = workout.exercises.map { exercise ->
+                mapOf(
+                    "id" to exercise.id,
+                    "name" to exercise.name,
+                    "equipment" to exercise.equipment,
+                    "muscleGroup" to exercise.muscleGroup,
+                    "defaultReps" to exercise.defaultReps,
+                    "defaultSets" to exercise.defaultSets,
+                    "isBodyweight" to exercise.isBodyweight,
+                    "usesWeight" to exercise.usesWeight,
+                    "description" to (exercise.description ?: "")
+                )
+            }
 
-            // Create the workout document in the user's routines subcollection
+            // Create update data
+            val updateData = mapOf(
+                "name" to workout.name,
+                "exercises" to exercisesData,
+                "updatedAt" to System.currentTimeMillis(),
+                "userId" to userId
+            )
+
+            // Update the document
             firestore.collection("user_workouts")
                 .document(userId)
                 .collection("routines")
-                .document(docId) // Use the formatted name as document ID
-                .set(
-                    mapOf(
-                        "name" to workout.name,
-                        "exercises" to workout.exercises,
-                        "createdAt" to workout.createdAt,
-                        "userId" to userId
-                    )
-                )
+                .document(workout.id)
+                .set(updateData, SetOptions.merge())
                 .await()
 
-
-            Log.d(TAG, "Successfully created workout: ${workout.name}")
+            Log.d(TAG, "Successfully updated workout: ${workout.name} with ${workout.exercises.size} exercises")
         } catch (e: Exception) {
-            Log.e(TAG, "Error creating workout", e)
+            Log.e(TAG, "Error updating workout", e)
             throw e
         }
-    }
-    override suspend fun updateWorkout(workout: Workout) {
-        TODO("Not yet implemented")
     }
 
     override suspend fun deleteWorkout(workoutId: String) {
@@ -412,6 +450,137 @@ class WorkoutRepositoryImpl @Inject constructor(
                     .also { Log.d(TAG, "Got ${it.size} exercises from Room") }
             }
     }
+
+    override suspend fun updateWorkoutColor(workoutId: String, colorHex: String) {
+        try {
+            val userId = authRepository.getCurrentUser()?.uid
+                ?: throw Exception("User not authenticated")
+
+            firestore.collection("user_workouts")
+                .document(userId)
+                .collection("routines")
+                .document(workoutId)
+                .update("colorHex", colorHex)
+                .await()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating workout color", e)
+            throw e
+        }
+    }
+
+    // ──────────────────────────────────────────────────────────────
+// WorkoutRepositoryImpl.kt   (inside the class)
+// ──────────────────────────────────────────────────────────────
+    @RequiresApi(Build.VERSION_CODES.O)
+    override fun getWeeklyCalendar(): Flow<List<WeeklyCalendarDay>> = callbackFlow {
+
+        val userId = authRepository.getCurrentUser()?.uid
+            ?: throw IllegalStateException("User not authenticated")
+
+        /* ---------- 1.  Build the list of dates for the current week ---------- */
+        val zone       = ZoneId.systemDefault()
+        val today      = LocalDate.now(zone)
+        //val monday     = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        //val weekDates  = (0..6).map { monday.plusDays(it.toLong()) }
+        val startDate  = today.minusDays(6)                   // ← 7-day window (today-6 … today)
+        val weekDates  = (0..6).map { startDate.plusDays(it.toLong()) }
+
+        fun emptyWeek() = weekDates.map { d -> WeeklyCalendarDay(d, null, false, null) }
+        trySend(emptyWeek())                                          // emit blank immediately
+
+        /* ---------- 2.  Listen for workout-history docs inside this week ------- */
+        val startMs = startDate.atStartOfDay(zone).toInstant().toEpochMilli()
+
+        val listener = firestore.collection("workout_history")
+            .document(userId).collection("workouts")
+            .where(Filter.greaterThanOrEqualTo("startTime", startMs))
+            .addSnapshotListener { snap, err ->
+                if (err != null) {
+                    Log.e(TAG, "getWeeklyCalendar: listener error", err)
+                    return@addSnapshotListener
+                }
+
+                /* 2a) Map docs → info we need for the UI                            */
+                val doneToday: Map<LocalDate, Triple<String?, Boolean, String?>> =
+                    snap?.documents?.mapNotNull { d ->
+                        val start = d.getLong("startTime") ?: return@mapNotNull null
+                        val date  = Instant.ofEpochMilli(start).atZone(zone).toLocalDate()
+                        val rid   = d.getString("routineId")
+                        val hex   = d.getString("colorHex")        // we stored it, so never null
+                        date to Triple(rid, true, hex)
+                    }?.toMap() ?: emptyMap()
+
+                /* 2b) Build visible calendar                                         */
+                val calendar = weekDates.map { date ->
+                    val triple = doneToday[date]
+                    WeeklyCalendarDay(
+                        date        = date,
+                        routineId   = triple?.first,
+                        isCompleted = triple?.second ?: false,
+                        colorHex    = triple?.third
+                    )
+                }
+                trySend(calendar)
+            }
+
+        awaitClose { listener.remove() }
+    }
+
+
+    override fun getSuggestedNextWorkout(): Flow<Workout?> = callbackFlow {
+        val userId = authRepository.getCurrentUser()?.uid
+            ?: throw Exception("User not authenticated")
+
+        val listener = firestore.collection("user_workouts")
+            .document(userId)
+            .collection("routines")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "Error fetching workouts", error)
+                    return@addSnapshotListener
+                }
+
+                val workouts = snapshot?.documents?.mapNotNull { doc ->
+                    try {
+                        val data = doc.data ?: return@mapNotNull null
+                        Workout(
+                            id = doc.id,
+                            name = data["name"] as? String ?: "",
+                            userId = userId,
+                            exercises = (data["exercises"] as? List<Map<String, Any>>)?.mapNotNull {
+                                mapToExercise(it)
+                            } ?: emptyList(),
+                            createdAt = data["createdAt"] as? Long ?: System.currentTimeMillis(),
+                            colorHex = data["colorHex"] as? String,
+                            lastPerformed = data["lastPerformed"] as? Long
+                        )
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error mapping workout", e)
+                        null
+                    }
+                } ?: emptyList()
+
+                val suggested = workouts.minByOrNull { it.lastPerformed ?: 0 }
+                trySend(suggested)
+            }
+
+        awaitClose { listener.remove() }
+    }
+
+    override suspend fun updateWorkoutLastPerformed(routineId: String, lastPerformed: Long) {
+        val userId = authRepository.getCurrentUser()?.uid
+            ?: throw Exception("User not authenticated")
+
+        firestore.collection("user_workouts")
+            .document(userId)
+            .collection("routines")
+            .document(routineId)
+            .update("lastPerformed", lastPerformed)
+            .await()
+    }
+
+}
+
     private fun mapToExercise(exerciseMap: Map<String, Any>): Exercise? {
         return try {
             Exercise(
@@ -429,4 +598,3 @@ class WorkoutRepositoryImpl @Inject constructor(
             null
         }
     }
-}

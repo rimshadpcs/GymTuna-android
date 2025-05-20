@@ -1,24 +1,17 @@
-package com.rimapps.gymlog.presentation.workout
+package com.rimapps.gymlog.presentation.workoutScreen
 
 import android.util.Log
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.MoreVert
-//noinspection UsingMaterialAndMaterial3Libraries
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,59 +21,59 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rimapps.gymlog.R
-import com.rimapps.gymlog.domain.model.ActiveWorkoutState
-import com.rimapps.gymlog.domain.model.ExerciseSet
-import com.rimapps.gymlog.domain.model.WorkoutExercise
+import com.rimapps.gymlog.domain.model.*
 import com.rimapps.gymlog.presentation.workoutScreen.FinishWorkoutDialog
+import com.rimapps.gymlog.ui.theme.Black
 import com.rimapps.gymlog.ui.theme.vag
 
-// --- NEW M3 DISMISS IMPORTS ---
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.rememberSwipeToDismissBoxState
-import androidx.compose.material3.SwipeToDismissBoxValue
-// ------------------------------
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun WorkoutScreen(
     routineId: String? = null,
+    routineName: String? = null,
     onBack: () -> Unit,
     onFinish: () -> Unit,
     onAddExercise: () -> Unit,
     viewModel: WorkoutViewModel = hiltViewModel()
 ) {
-    val isFinishing by viewModel.isFinishing.collectAsStateWithLifecycle()
+    val initialized = remember { mutableStateOf(false) }
     val workoutDuration by viewModel.workoutDuration.collectAsStateWithLifecycle()
     val exercises by viewModel.exercises.collectAsStateWithLifecycle()
     val totalVolume by viewModel.totalVolume.collectAsStateWithLifecycle()
     val totalSets by viewModel.totalSets.collectAsStateWithLifecycle()
-    var showFinishDialog by remember { mutableStateOf(false) }
     var showErrorDialog by remember { mutableStateOf<String?>(null) }
-    val workoutState by viewModel.workoutState.collectAsStateWithLifecycle(initialValue = ActiveWorkoutState.Initial)
+    val showUpdateRoutineDialog by viewModel.showUpdateRoutineDialog.collectAsStateWithLifecycle()
 
-    LaunchedEffect(Unit) { Log.d("WorkoutScreen", "Initial routineId: $routineId") }
+    var showFinishDialog by remember { mutableStateOf(false) }
+    val workoutState by viewModel.workoutState.collectAsStateWithLifecycle()
+    val isFinishing = workoutState is ActiveWorkoutState.Loading
 
     LaunchedEffect(routineId) {
-        routineId?.let { id ->
-            Log.d("WorkoutScreen", "Initializing workout with routine: $id")
-            viewModel.initializeFromRoutine(id)
+        if (!initialized.value && routineId != null) {
+            viewModel.initializeFromRoutine(routineId)
+            initialized.value = true
         }
     }
-
-    LaunchedEffect(exercises) { Log.d("WorkoutScreen", "Exercises updated: ${exercises.size}") }
-
+    LaunchedEffect(workoutState) {
+        if (workoutState is ActiveWorkoutState.Success) {
+            onFinish()
+        }
+    }
     LaunchedEffect(workoutState) {
         when (workoutState) {
             is ActiveWorkoutState.Success -> {
                 showFinishDialog = false
                 onFinish()
             }
-
             is ActiveWorkoutState.Error -> showErrorDialog = (workoutState as ActiveWorkoutState.Error).message
             else -> {}
         }
@@ -100,17 +93,34 @@ fun WorkoutScreen(
     if (showFinishDialog) {
         FinishWorkoutDialog(
             onDismiss = { showFinishDialog = false },
-            onConfirm = { routineName, saveAsRoutine ->
-                viewModel.finishWorkout(routineName, saveAsRoutine) {
+            onConfirm = {
+                viewModel.finishWorkout {
                     showFinishDialog = false
                     onFinish()
                 }
             },
-            isLoading = workoutState is ActiveWorkoutState.Loading
+            isLoading = isFinishing
         )
     }
 
-    /* ---------- Screen layout ---------- */
+
+    if (showUpdateRoutineDialog) {
+        UpdateRoutineDialog(
+            onDismiss = {
+                viewModel.dismissUpdateDialog()
+                showFinishDialog = false
+                onFinish()
+            },
+            onConfirm = {
+                viewModel.updateRoutine {
+                    viewModel.dismissUpdateDialog()
+                    showFinishDialog = false
+                    onFinish()
+                }
+            }
+        )
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -130,26 +140,32 @@ fun WorkoutScreen(
                     Icon(Icons.Default.ArrowBack, "Back", tint = Color.Black)
                 }
                 Text(
-                    "Log Workout",
+                    text = routineName ?: "Quick Workout",
                     style = MaterialTheme.typography.titleLarge,
                     color = Color.Black,
                     fontFamily = vag,
-                    fontWeight = FontWeight.Medium
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 8.dp)
                 )
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    painterResource(id = R.drawable.timer),
-                    "Timer",
-                    tint = Color.Black,
-                    modifier = Modifier.size(24.dp)
+                Text(
+                    workoutDuration,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontFamily = vag,
+                    fontWeight = FontWeight.Medium
                 )
                 Spacer(Modifier.width(16.dp))
                 Button(
                     onClick = { showFinishDialog = true },
                     enabled = !isFinishing,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Black, contentColor = Color.White),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Black,
+                        contentColor = Color.White
+                    ),
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     if (isFinishing) {
@@ -161,20 +177,19 @@ fun WorkoutScreen(
             }
         }
 
-        /* ---- Workout stats ---- */
+        /* ---- Stats ---- */
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 0.dp)
+                .padding(horizontal = 16.dp)
                 .padding(bottom = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Column {
-                Text("Duration", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+                Text("Volume", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
                 Text(
-                    workoutDuration,
+                    "$totalVolume kg",
                     style = MaterialTheme.typography.titleMedium,
-                    color = Color.Black,
                     fontFamily = vag,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -184,27 +199,25 @@ fun WorkoutScreen(
                 Text(
                     "$totalSets",
                     style = MaterialTheme.typography.titleMedium,
-                    color = Color.Black,
                     fontFamily = vag,
                     fontWeight = FontWeight.SemiBold
                 )
             }
         }
 
-
-        /* ---- Exercise list OR empty state ---- */
+        /* ---- Exercise list or empty state ---- */
         if (exercises.isEmpty()) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
                     .weight(1f)
+                    .fillMaxWidth()
                     .padding(16.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(
                         painterResource(id = R.drawable.gym),
-                        "Dumbbell",
+                        "Empty state",
                         modifier = Modifier.size(48.dp),
                         tint = Color.Gray
                     )
@@ -213,7 +226,6 @@ fun WorkoutScreen(
                         "Get started",
                         style = MaterialTheme.typography.headlineMedium,
                         color = Color.Black,
-                        textAlign = TextAlign.Center,
                         fontFamily = vag,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -221,8 +233,7 @@ fun WorkoutScreen(
                     Text(
                         "Add an exercise to start your workout",
                         style = MaterialTheme.typography.bodyLarge,
-                        color = Color.Gray,
-                        textAlign = TextAlign.Center
+                        color = Color.Gray
                     )
                 }
             }
@@ -232,17 +243,25 @@ fun WorkoutScreen(
                     .weight(1f)
                     .fillMaxWidth()
             ) {
-                items(exercises) { workoutExercise ->
+                items(exercises) { exercise ->
                     ExerciseItem(
-                        workoutExercise = workoutExercise,
-                        onAddSet = { viewModel.addSet(workoutExercise) },
+                        workoutExercise = exercise,
+                        onAddSet = { viewModel.addSet(exercise) },
                         onSetCompleted = { set, isCompleted ->
-                            viewModel.setCompleted(workoutExercise, set, isCompleted)
+                            viewModel.setCompleted(exercise, set, isCompleted)
                         },
-                        onUpdateReps = { set, reps -> viewModel.updateReps(workoutExercise, set, reps) },
-                        onUpdateWeight = { set, weight -> viewModel.updateWeight(workoutExercise, set, weight) },
-                        onUpdateNotes = { notes -> viewModel.updateNotes(workoutExercise, notes) },
-                        onDeleteSet = { exercise, setNumber -> viewModel.deleteSet(exercise, setNumber) }
+                        onUpdateReps = { set, reps ->
+                            viewModel.updateReps(exercise, set, reps)
+                        },
+                        onUpdateWeight = { set, weight ->
+                            viewModel.updateWeight(exercise, set, weight)
+                        },
+                        onUpdateNotes = { notes -> viewModel.updateNotes(exercise, notes) },
+                        onDeleteSet = { ex, setNumber -> viewModel.deleteSet(ex, setNumber) },
+                        onArrangeExercise = { },
+                        onReplaceExercise = { },
+                        onAddToSuperset = { },
+                        onRemoveExercise = { }
                     )
                 }
             }
@@ -254,36 +273,40 @@ fun WorkoutScreen(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color.White,
+                contentColor = Color.Black
+            ),
             border = BorderStroke(1.dp, Color.Black),
             shape = RoundedCornerShape(12.dp)
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(8.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(8.dp)
+            ) {
                 Icon(Icons.Default.Add, "Add")
                 Spacer(Modifier.width(8.dp))
                 Text("Add Exercise", fontFamily = vag, fontWeight = FontWeight.SemiBold)
             }
         }
 
-        Row(
+        Button(
+            onClick = {
+                viewModel.discardWorkout()
+                onBack()
+            },
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 0.dp)
+                .padding(horizontal = 16.dp)
                 .padding(bottom = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color.White,
+                contentColor = Color.Red
+            ),
+            border = BorderStroke(1.dp, Color.Red),
+            shape = RoundedCornerShape(12.dp)
         ) {
-            Button(
-                onClick = {
-                    viewModel.discardWorkout()
-                    onBack()
-                },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Red),
-                border = BorderStroke(1.dp, Color.Red),
-                shape = RoundedCornerShape(12.dp)
-            ) {
-                Text("Discard Workout", fontFamily = vag, fontWeight = FontWeight.SemiBold, color = Color.Red)
-            }
+            Text("Discard Workout", fontFamily = vag, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -297,11 +320,16 @@ fun ExerciseItem(
     onUpdateWeight: (ExerciseSet, Double) -> Unit,
     onUpdateReps: (ExerciseSet, Int) -> Unit,
     onUpdateNotes: (String) -> Unit,
-    onDeleteSet: (WorkoutExercise, Int) -> Unit
+    onDeleteSet: (WorkoutExercise, Int) -> Unit,
+    onArrangeExercise: (WorkoutExercise) -> Unit,
+    onReplaceExercise: (WorkoutExercise) -> Unit,
+    onAddToSuperset: (WorkoutExercise) -> Unit,
+    onRemoveExercise: (WorkoutExercise) -> Unit
 ) {
     var notes by remember { mutableStateOf(workoutExercise.notes) }
+    var showOptions by remember { mutableStateOf(false) }
 
-    Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+    Column(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
         /* ---- Header ---- */
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -311,7 +339,7 @@ fun ExerciseItem(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(32.dp)
                         .clip(CircleShape)
                         .background(Color.White)
                         .border(1.dp, Color.Black, CircleShape),
@@ -320,19 +348,19 @@ fun ExerciseItem(
                     Image(
                         painterResource(id = getMuscleGroupIcon(workoutExercise.exercise.muscleGroup)),
                         "Muscle group",
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(20.dp)
                     )
                 }
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(8.dp))
                 Text(
                     workoutExercise.exercise.name,
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.titleMedium,
                     color = Color.Black,
                     fontFamily = vag,
                     fontWeight = FontWeight.SemiBold
                 )
             }
-            IconButton(onClick = { /* TODO */ }) {
+            IconButton(onClick = { showOptions = true }) {
                 Icon(Icons.Default.MoreVert, "More", tint = Color.Black)
             }
         }
@@ -344,40 +372,98 @@ fun ExerciseItem(
                 notes = it
                 onUpdateNotes(it)
             },
-            placeholder = { Text("Add notes here...", color = Color.Gray) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp),
+            placeholder = { Text("Add notes here...", color = Color.Gray, fontSize = 12.sp) },
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
             colors = TextFieldDefaults.textFieldColors(
                 containerColor = Color.Transparent,
                 focusedIndicatorColor = Color.Transparent,
                 unfocusedIndicatorColor = Color.Transparent
             ),
+            textStyle = TextStyle(fontSize = 12.sp),
             singleLine = true
         )
 
         /* ---- Rest timer button ---- */
         Button(
             onClick = { /* TODO */ },
-            colors = ButtonDefaults.buttonColors(containerColor = Color.Transparent, contentColor = Color.Black),
-            contentPadding = PaddingValues(0.dp)
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color.Transparent,
+                contentColor = Color.Black
+            ),
+            contentPadding = PaddingValues(0.dp),
+            modifier = Modifier.height(28.dp)
         ) {
-            Icon(painterResource(id = R.drawable.timer), "Rest", tint = Color.Black, modifier = Modifier.size(20.dp))
+            Icon(
+                painterResource(id = R.drawable.timer),
+                "Rest",
+                tint = Color.Black,
+                modifier = Modifier.size(16.dp)
+            )
             Spacer(Modifier.width(4.dp))
-            Text("Rest Timer: OFF", fontFamily = vag, fontWeight = FontWeight.Medium)
+            Text(
+                "Rest Timer: OFF",
+                fontFamily = vag,
+                fontWeight = FontWeight.Medium,
+                fontSize = 12.sp
+            )
         }
 
         /* ---- Sets header ---- */
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
+                .padding( 16.dp, 16.dp,8.dp),
+            horizontalArrangement = Arrangement.Start
         ) {
-            Text("SET", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
-            Text("LAST WORKOUT", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
-            Text("REPS", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
-            Box(Modifier.size(24.dp))
+            // Set column - match exact position of values in SetRow
+            Text(
+                "SET", 
+                style = MaterialTheme.typography.bodyMedium, 
+                color = Color.Gray,
+                modifier = Modifier.width(40.dp),
+                textAlign = TextAlign.Center
+            )
+            
+            // Last column
+            Text(
+                "LAST", 
+                style = MaterialTheme.typography.bodyMedium, 
+                color = Color.Gray,
+                modifier = Modifier.width(56.dp),
+                textAlign = TextAlign.Center
+            )
+            
+            // Best column
+            Text(
+                "BEST", 
+                style = MaterialTheme.typography.bodyMedium, 
+                color = Color.Gray,
+                modifier = Modifier.width(56.dp),
+                textAlign = TextAlign.Center
+            )
+            
+            // KG column
+            if (workoutExercise.exercise.usesWeight) {
+                Text(
+                    "KG", 
+                    style = MaterialTheme.typography.bodyMedium, 
+                    color = Color.Gray,
+                    modifier = Modifier.width(64.dp),
+                    textAlign = TextAlign.Center
+                )
+            }
+            
+            // Reps column
+            Text(
+                "REPS", 
+                style = MaterialTheme.typography.bodyMedium, 
+                color = Color.Gray,
+                modifier = Modifier.width(64.dp),
+                textAlign = TextAlign.Center
+            )
+            
+            // Space for checkbox - this aligns with the Spacer in SetRow
+            Spacer(Modifier.weight(1f))
         }
 
         /* ---- Sets list ---- */
@@ -396,10 +482,11 @@ fun ExerciseItem(
         /* ---- Add set button ---- */
         OutlinedButton(
             onClick = onAddSet,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp),
-            colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White, contentColor = Color.Black),
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            colors = ButtonDefaults.outlinedButtonColors(
+                containerColor = Color.White,
+                contentColor = Color.Black
+            ),
             border = BorderStroke(1.dp, Color.Gray),
             shape = RoundedCornerShape(32.dp)
         ) {
@@ -408,8 +495,23 @@ fun ExerciseItem(
             Text("Add Set", fontFamily = vag, fontWeight = FontWeight.Medium, fontSize = 14.sp)
         }
     }
-
 }
+
+private fun getMuscleGroupIcon(muscleGroup: String): Int =
+    when (muscleGroup.lowercase()) {
+        "chest" -> R.drawable.chest
+        "back", "middle back", "lower back" -> R.drawable.back
+        "legs", "hamstrings", "quadriceps", "adductors", "hip flexors" -> R.drawable.leg
+        "shoulders", "traps", "neck" -> R.drawable.shoulders
+        "biceps", "arms" -> R.drawable.biceps
+        "triceps" -> R.drawable.triceps
+        "core", "abs", "abdominals", "obliques" -> R.drawable.core
+        "calves" -> R.drawable.calves
+        "forearms" -> R.drawable.forearms
+        "glutes" -> R.drawable.glutes
+        "full body" -> R.drawable.fullbody
+        else -> R.drawable.fullbody
+    }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -422,10 +524,14 @@ fun SetRow(
     onUpdateWeight: (Double) -> Unit,
     onDelete: () -> Unit
 ) {
-    var reps by remember { mutableStateOf(set.reps.toString()) }
-    var weight by remember { mutableStateOf(set.weight.toString()) }
+    // Initialize with empty string to show placeholder if weight is 0
+    var reps by remember { 
+        mutableStateOf(if (set.reps > 0) set.reps.toString() else "") 
+    }
+    var weight by remember { 
+        mutableStateOf(if (set.weight > 0.0) set.weight.toString() else "") 
+    }
 
-    /* ----- Material 3 swipe-to-dismiss ----- */
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             if (value == SwipeToDismissBoxValue.EndToStart) {
@@ -442,126 +548,245 @@ fun SetRow(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(Color.Black)
-                    .padding(horizontal = 16.dp),
+                    .padding(horizontal = 4.dp)  // Add small padding to prevent edge visibility
+                    .clip(RoundedCornerShape(8.dp))  // Match the row's corner radius
+                    .background(Color.Black),
                 contentAlignment = Alignment.CenterEnd
             ) {
                 Icon(Icons.Default.Delete, "Delete", tint = Color.White)
             }
-        },
-        content = {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp)
-                    .background(
-                        if (setNumber % 2 == 0) Color(0xFFF5F5F5) else Color.White,
-                        RoundedCornerShape(8.dp)
-                    )
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        }
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .height(48.dp)
+                .background(
+                    if (setNumber % 2 == 0) Color(0xFFF5F5F5) else Color.White,
+                    RoundedCornerShape(8.dp)
+                )
+                .padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.Start,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Set number
+            Text(
+                "$setNumber",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.width(40.dp)
+            )
+
+            // Previous workout
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.width(56.dp)
             ) {
-                /* --- Set # --- */
+                // Always show the LAST column, with direct value checking
+                val prevText = if (set.previousWeight != null && set.previousReps != null) {
+                    "${set.previousWeight}×${set.previousReps}"
+                } else "-"
+                
                 Text(
-                    "$setNumber",
-                    style = MaterialTheme.typography.titleMedium,
+                    text = prevText,
+                    fontSize = 12.sp,
+                    color = Color.Gray,
+                    textAlign = TextAlign.Center
+                )
+            }
+
+            // Best set
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier.width(56.dp)
+            ) {
+                // Always show the BEST column, with direct value checking
+                val bestText = if (set.bestWeight != null && set.bestReps != null) {
+                    "${set.bestWeight}×${set.bestReps}"
+                } else "-"
+                
+                Text(
+                    text = bestText,
+                    fontSize = 12.sp,
                     color = Color.Black,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.width(24.dp)
+                    textAlign = TextAlign.Center
                 )
+            }
 
-                /* --- Previous stats --- */
-                if (usesWeight) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(50.dp)) {
-                        Text("${set.previousWeight ?: 0}kg", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-                        Text("x${set.previousReps ?: 0}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-                    }
-                } else {
-                    Text("x ${set.previousReps ?: 0}", style = MaterialTheme.typography.bodyMedium, color = Color.Gray, modifier = Modifier.width(50.dp))
-                }
-
-                /* --- Weight input --- */
-                if (usesWeight) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(55.dp)) {
-                        BasicTextField(
-                            value = weight,
-                            onValueChange = {
-                                if (it.isEmpty() || it.all { c -> c.isDigit() || c == '.' }) {
-                                    weight = it
-                                    onUpdateWeight(it.toDoubleOrNull() ?: 0.0)
-                                }
-                            },
-                            textStyle = TextStyle(
-                                color = Color.Black,
-                                fontWeight = FontWeight.Bold,
-                                textAlign = TextAlign.Center,
-                                fontSize = 16.sp
-                            ),
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Text("kg", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-                    }
-                }
-
-                /* --- Reps input --- */
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(if (usesWeight) 45.dp else 60.dp)) {
+            // Weight input with numerical keyboard
+            if (usesWeight) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier
+                        .width(64.dp)
+                        .background(Color(0xFFF9F9F9), RoundedCornerShape(4.dp))
+                        .border(1.dp, Color(0xFFE0E0E0), RoundedCornerShape(4.dp))
+                ) {
+                    // Use placeholder text (hint) from previous workout if available
+                    val placeholder = set.previousWeight?.toString() ?: ""
+                    
                     BasicTextField(
-                        value = reps,
+                        value = weight,
                         onValueChange = {
-                            if (it.isEmpty() || it.all { c -> c.isDigit() }) {
-                                reps = it
-                                onUpdateReps(it.toIntOrNull() ?: 0)
+                            if (it.isEmpty() || it.matches(Regex("^\\d*\\.?\\d*$"))) {
+                                weight = it
+                                it.toDoubleOrNull()?.let { value -> onUpdateWeight(value) }
                             }
                         },
                         textStyle = TextStyle(
-                            color = Color.Black,
-                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
                             textAlign = TextAlign.Center,
-                            fontSize = 18.sp
+                            fontWeight = FontWeight.Bold
                         ),
-                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Decimal,
+                            imeAction = ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onDone = { /* Close keyboard */ }
+                        ),
+                        decorationBox = { innerTextField ->
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                            ) {
+                                if (weight.isEmpty()) {
+                                    Text(
+                                        text = placeholder,
+                                        fontSize = 14.sp,
+                                        color = Color.Gray,
+                                        textAlign = TextAlign.Center
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
+            }
 
-                /* --- Completed checkbox --- */
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(RoundedCornerShape(4.dp))
-                        .border(1.dp, if (set.isCompleted) Color.Black else Color.Gray, RoundedCornerShape(4.dp))
-                        .background(if (set.isCompleted) Color.Black else Color.White)
-                        .clickable { onCompleted(!set.isCompleted) },
-                    contentAlignment = Alignment.Center
-                ) {
+            // Reps input with numerical keyboard
+            Box(
+                contentAlignment = Alignment.Center,
+                modifier = Modifier
+                    .width(64.dp)
+                    .background(Color(0xFFF9F9F9), RoundedCornerShape(4.dp))
+                    .border(1.dp, Color(0xFFE0E0E0), RoundedCornerShape(4.dp))
+            ) {
+                // Use placeholder text (hint) from previous workout if available
+                val placeholder = set.previousReps?.toString() ?: ""
+                
+                BasicTextField(
+                    value = reps,
+                    onValueChange = {
+                        if (it.isEmpty() || it.all { c -> c.isDigit() }) {
+                            reps = it
+                            it.toIntOrNull()?.let { value -> onUpdateReps(value) }
+                        }
+                    },
+                    textStyle = TextStyle(
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center,
+                        fontWeight = FontWeight.Bold
+                    ),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Number,
+                        imeAction = ImeAction.Done
+                    ),
+                    keyboardActions = KeyboardActions(
+                        onDone = { /* Close keyboard */ }
+                    ),
+                    decorationBox = { innerTextField ->
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                        ) {
+                            if (reps.isEmpty()) {
+                                Text(
+                                    text = placeholder,
+                                    fontSize = 14.sp,
+                                    color = Color.Gray,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                            innerTextField()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            // Space between reps and checkbox
+            Spacer(Modifier.weight(1f))
+
+            // Completion checkbox
+            Box(
+                modifier = Modifier.size(32.dp)
+                    .clip(RoundedCornerShape(4.dp))
+                    .border(1.dp, if (set.isCompleted) Color.Black else Color.Gray, RoundedCornerShape(4.dp))
+                    .background(if (set.isCompleted) Color.Black else Color.White)
+                    .clickable { onCompleted(!set.isCompleted) },
+                contentAlignment = Alignment.Center
+            ) {
+                if (set.isCompleted) {
                     Icon(
                         Icons.Default.Check,
-                        "Complete",
-                        tint = if (set.isCompleted) Color.White else Color.Gray,
-                        modifier = Modifier.size(16.dp)
+                        "Completed",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }
         }
+    }
+}
+@Composable
+fun UpdateRoutineDialog(
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                "Update Routine",
+                style = MaterialTheme.typography.titleLarge,
+                fontFamily = vag,
+                fontWeight = FontWeight.SemiBold
+            )
+        },
+        text = {
+            Text(
+                "Would you like to update the original routine with these changes?",
+                style = MaterialTheme.typography.bodyLarge
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.Black,
+                    contentColor = Color.White
+                )
+            ) {
+                Text(
+                    "Update Routine",
+                    fontFamily = vag,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(
+                    "Keep Original",
+                    fontFamily = vag,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.Black
+                )
+            }
+        }
     )
 }
-
-/* ----- Helper for muscle-group icons ----- */
-private fun getMuscleGroupIcon(muscleGroup: String): Int =
-    when (muscleGroup.lowercase()) {
-        "chest" -> R.drawable.chest
-        "back", "middle back", "lower back" -> R.drawable.back
-        "legs", "hamstrings", "quadriceps", "adductors", "hip flexors" -> R.drawable.leg
-        "shoulders", "traps", "neck" -> R.drawable.shoulders
-        "biceps", "arms" -> R.drawable.biceps
-        "triceps" -> R.drawable.triceps
-        "core", "abs", "abdominals", "obliques" -> R.drawable.core
-        "calves" -> R.drawable.calves
-        "forearms" -> R.drawable.forearms
-        "glutes" -> R.drawable.glutes
-        "full body" -> R.drawable.fullbody
-        else -> R.drawable.fullbody
-    }

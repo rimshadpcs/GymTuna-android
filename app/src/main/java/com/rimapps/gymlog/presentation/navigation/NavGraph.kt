@@ -1,226 +1,175 @@
+/*  com.rimapps.gymlog.presentation.navigation.NavGraph  */
+
+@file:Suppress("UnrememberedGetBackStackEntry", "RestrictedApi")
+
 package com.rimapps.gymlog.presentation.navigation
 
 import android.annotation.SuppressLint
+import android.os.Build
 import android.util.Log
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.lifecycle.lifecycleScope
-import androidx.navigation.NavHostController
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
-import com.rimapps.gymlog.presentation.auth.AuthViewModel
-import com.rimapps.gymlog.presentation.home.HomeScreen
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.annotation.RequiresApi
+import androidx.compose.runtime.*
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.navigation.NavController
-import androidx.navigation.NavType
-import androidx.navigation.navArgument
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.*
+import androidx.navigation.compose.*
+
 import com.rimapps.gymlog.domain.model.AuthState
-import com.rimapps.gymlog.presentation.auth.AuthScreen
+import com.rimapps.gymlog.presentation.auth.*
+import com.rimapps.gymlog.presentation.home.*
 import com.rimapps.gymlog.presentation.exercise.ExerciseSearchScreen
-
-import com.rimapps.gymlog.presentation.home.HomeViewModel
-import com.rimapps.gymlog.presentation.routine.CreateRoutineScreen
-import com.rimapps.gymlog.presentation.routine.CreateRoutineViewModel
+import com.rimapps.gymlog.presentation.routine.*
 import com.rimapps.gymlog.presentation.settings.SettingsScreen
-import com.rimapps.gymlog.presentation.workout.WorkoutScreen
-import com.rimapps.gymlog.presentation.workout.WorkoutViewModel
+import com.rimapps.gymlog.presentation.history.HistoryScreen
+import com.rimapps.gymlog.presentation.workoutScreen.WorkoutScreen
+import com.rimapps.gymlog.presentation.workoutScreen.WorkoutViewModel
 
-@SuppressLint("UnrememberedGetBackStackEntry", "RestrictedApi")
+@RequiresApi(Build.VERSION_CODES.O)
+@SuppressLint("UnusedMaterial3ScaffoldPaddingParameter")
 @Composable
 fun NavGraph(
-    authViewModel: AuthViewModel,
-    navController: NavHostController = rememberNavController(),
-    startDestination: String = Screen.Auth.route,
+    authViewModel     : AuthViewModel,
+    navController     : NavHostController = rememberNavController(),
+    startDestination  : String            = Screen.Auth.route,
     onGoogleSignInClick: () -> Unit
 ) {
     val authState by authViewModel.authState.collectAsStateWithLifecycle()
+
     LaunchedEffect(authState) {
         when (authState) {
-            is AuthState.Success -> {
-                Log.d("NavGraph", "Auth success, navigating to Home")
+            is AuthState.Success ->
                 navController.navigate(Screen.Home.route) {
                     popUpTo(Screen.Auth.route) { inclusive = true }
                 }
-            }
-
-            is AuthState.Error -> {
+            is AuthState.Error ->
                 Log.e("NavGraph", "Auth error: ${(authState as AuthState.Error).message}")
-            }
-
-            else -> {} // Handle other states if needed
+            else -> Unit
         }
     }
 
+    /* optional back-stack logger */
     DisposableEffect(navController) {
-        val listener =
-            NavController.OnDestinationChangedListener { controller, destination, arguments ->
-                Log.d(
-                    "NavGraph",
-                    "Navigation to ${destination.route}, current backstack: ${controller.currentBackStack.value.map { it.destination.route }}"
-                )
-            }
-        navController.addOnDestinationChangedListener(listener)
-        onDispose {
-            navController.removeOnDestinationChangedListener(listener)
+        val l = NavController.OnDestinationChangedListener { c, d, _ ->
+            Log.d("NavGraph", "Navigated to ${d.route}. stack=${c.currentDestination?.route}")
         }
+        navController.addOnDestinationChangedListener(l)
+        onDispose { navController.removeOnDestinationChangedListener(l) }
     }
+    NavHost(navController, startDestination) {
 
-
-    NavHost(
-        navController = navController,
-        startDestination = startDestination
-    ) {
+        /* ---------- Auth ---------- */
         composable(Screen.Auth.route) {
-            Log.d("NavGraph", "Entering Auth composable")
             AuthScreen(
                 viewModel = authViewModel,
                 onGoogleSignInClick = onGoogleSignInClick,
                 onNavigateToHome = {
-                    Log.d("NavGraph", "Attempting navigation to Home")
-                    try {
-                        navController.navigate(Screen.Home.route) {
-                            popUpTo(Screen.Auth.route) { inclusive = true }
-                        }
-                        Log.d("NavGraph", "Navigation to Home successful")
-                    } catch (e: Exception) {
-                        Log.e("NavGraph", "Navigation failed", e)
+                    navController.navigate(Screen.Home.route) {
+                        popUpTo(Screen.Auth.route) { inclusive = true }
                     }
                 }
             )
         }
 
         composable(Screen.Home.route) {
-            val viewModel: HomeViewModel = hiltViewModel()
+            val vm: HomeViewModel = hiltViewModel()
             HomeScreen(
+                viewModel = vm,
                 onSignOut = {
-                    viewModel.signOut()
+                    vm.signOut()
                     navController.navigate(Screen.Auth.route) {
                         popUpTo(Screen.Home.route) { inclusive = true }
                     }
                 },
-                viewModel = viewModel,
-                onStartEmptyWorkout = {
-                    navController.navigate(Screen.ActiveWorkout.route)
-                },
-                onStartRoutine = { routineId ->
-                    navController.navigate("${Screen.ActiveWorkout.route}?routineId=$routineId")
-                },
-                onNewRoutine = {
-                    navController.navigate(Screen.CreateRoutine.route)
-                },
-                onEditRoutine = { routineId ->
-                    navController.navigate("${Screen.CreateRoutine.route}?routineId=$routineId")
-                },
-                onNavigateToSearch = {
-                    navController.navigate(Screen.ExerciseSearch.route)
-                },
-                onNavigateToSettings = {
-                    navController.navigate(Screen.Settings.route)
-                }
+                onStartEmptyWorkout = { navController.navigate(Screen.ActiveWorkout.route) },
+                onStartRoutine      = { id -> navController.navigate(Screen.ActiveWorkout.withRoutineId(id)) },
+                onNewRoutine        = { navController.navigate(Screen.CreateRoutine.route) },
+                onEditRoutine       = { id -> navController.navigate(Screen.CreateRoutine.withRoutineId(id)) },
+                onNavigateToSearch  = { navController.navigate(Screen.ExerciseSearch.route) },
+                onNavigateToSettings= { navController.navigate(Screen.Settings.route) },
+                /* ---------- NEW: “History” from top-right button ---------- */
+                onNavigateToHistory = { navController.navigate(Screen.History.route) }
             )
         }
-        composable(
-            route = "${Screen.CreateRoutine.route}?routineId={routineId}",
-            arguments = listOf(
-                navArgument("routineId") {
-                    type = NavType.StringType
-                    nullable = true
-                    defaultValue = null
-                }
-            )
-        ) { backStackEntry ->
-            val routineId = backStackEntry.arguments?.getString("routineId")
-            val viewModel: CreateRoutineViewModel = hiltViewModel()
 
+        composable(Screen.History.route) {
+            val vm = hiltViewModel<com.rimapps.gymlog.presentation.history.HistoryViewModel>()
+            HistoryScreen(
+                viewModel = vm,
+                onBack    = { navController.popBackStack() }
+            )
+        }
+
+        composable(
+            "${Screen.CreateRoutine.route}?routineId={routineId}",
+            arguments = listOf(navArgument("routineId") {
+                type = NavType.StringType; nullable = true; defaultValue = null
+            })
+        ) { entry ->
+            val routineId = entry.arguments?.getString("routineId")
+            val vm: CreateRoutineViewModel = hiltViewModel()
             CreateRoutineScreen(
-                routineId = routineId, // Pass routineId to distinguish between create and edit modes
-                onBack = { navController.popBackStack() },
+                routineId        = routineId,
+                onBack           = { navController.popBackStack() },
                 onRoutineCreated = { navController.popBackStack() },
-                onAddExercise = {
-                    navController.navigate(Screen.ExerciseSearch.route)
-                }
+                onAddExercise    = { navController.navigate(Screen.ExerciseSearch.route) }
             )
         }
 
         composable(
-            route = "${Screen.ActiveWorkout.route}?routineId={routineId}",
-            arguments = listOf(
-                navArgument("routineId") {
-                    type = NavType.StringType
-                    nullable = true
-                    defaultValue = null
-                }
-            )
-        ) { backStackEntry ->
-            val routineId = backStackEntry.arguments?.getString("routineId")
-            Log.d("NavGraph", "Composing WorkoutScreen with routineId: $routineId")
-
-            val workoutViewModel: WorkoutViewModel = hiltViewModel()
+            "${Screen.ActiveWorkout.route}?routineId={routineId}",
+            arguments = listOf(navArgument("routineId") {
+                type = NavType.StringType; nullable = true; defaultValue = null
+            })
+        ) { entry ->
+            val routineId = entry.arguments?.getString("routineId")
+            val vm: WorkoutViewModel = hiltViewModel()
+            val routineName by vm.routineName.collectAsStateWithLifecycle()
 
             WorkoutScreen(
-                routineId = routineId,
-                onBack = { navController.popBackStack() },
-                onFinish = {
+                routineId   = routineId,
+                routineName = routineName,
+                onBack      = { navController.popBackStack() },
+                onFinish    = {
                     navController.navigate(Screen.Home.route) {
                         popUpTo(Screen.Home.route) { inclusive = true }
                     }
                 },
-                onAddExercise = {
-                    navController.navigate(Screen.ExerciseSearch.route)
-                }
+                onAddExercise = { navController.navigate(Screen.ExerciseSearch.route) }
             )
         }
 
-
-        composable(Screen.Settings.route) {
-            SettingsScreen(
-                onBack = { navController.popBackStack() },
-                onSignOut = {
-                    navController.navigate(Screen.Auth.route) {
-                        popUpTo(Screen.Home.route) { inclusive = true }
-                    }
-                }
-            )
-        }
-        // In NavGraph.kt, update the ExerciseSearchScreen composable
         composable(Screen.ExerciseSearch.route) {
-            val previousRoute =
-                navController.previousBackStackEntry?.destination?.route?.substringBefore("?")
+            val prevRoute = navController.previousBackStackEntry
+                ?.destination?.route?.substringBefore("?")
 
-            val workoutViewModel = if (previousRoute == Screen.ActiveWorkout.route) {
+            val workoutVm = if (prevRoute == Screen.ActiveWorkout.route)
                 hiltViewModel<WorkoutViewModel>(
-                    navController.getBackStackEntry(
-                        navController.previousBackStackEntry?.destination?.route
-                            ?: Screen.ActiveWorkout.route
-                    )
-                )
-            } else null
+                    navController.getBackStackEntry(Screen.ActiveWorkout.route)
+                ) else null
 
-            val createRoutineViewModel = if (previousRoute == Screen.CreateRoutine.route) {
+            val routineVm = if (prevRoute == Screen.CreateRoutine.route)
                 hiltViewModel<CreateRoutineViewModel>(
                     navController.getBackStackEntry(Screen.CreateRoutine.route)
-                )
-            } else null
+                ) else null
 
             ExerciseSearchScreen(
                 onBack = { navController.popBackStack() },
-                onExerciseClick = { exercise ->
-                    when (previousRoute) {
-                        Screen.ActiveWorkout.route -> {
-                            workoutViewModel?.addExercise(exercise)
-                            navController.popBackStack()
-                        }
+                onExerciseClick = { ex ->
+                    when (prevRoute) {
+                        Screen.ActiveWorkout.route -> workoutVm?.addExercise(ex)
+                        Screen.CreateRoutine.route -> routineVm?.addExercise(ex)
+                    }
+                    navController.popBackStack()
+                }
+            )
+        }
 
-                        Screen.CreateRoutine.route -> {
-                            createRoutineViewModel?.addExercise(exercise)
-                            navController.popBackStack()
-                        }
-
-                        else -> navController.popBackStack()
+        composable(Screen.Settings.route) {
+            SettingsScreen(
+                onBack    = { navController.popBackStack() },
+                onSignOut = {
+                    navController.navigate(Screen.Auth.route) {
+                        popUpTo(Screen.Home.route) { inclusive = true }
                     }
                 }
             )

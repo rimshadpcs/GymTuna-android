@@ -4,6 +4,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
@@ -61,9 +63,9 @@ fun WorkoutItem(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(cardHeight)
-            .padding(horizontal = 0.dp), // No horizontal padding here to allow full width
-        shape = RoundedCornerShape(cardCornerRadius),
+            .height(92.dp)
+            .padding(vertical = 4.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = Color.White
         ),
@@ -72,7 +74,7 @@ fun WorkoutItem(
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = horizontalPadding),
+                .padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -81,20 +83,36 @@ fun WorkoutItem(
                     .weight(1f)
                     .padding(end = 16.dp)
             ) {
-                Text(
-                    text = workout.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontFamily = vag,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.Black
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = workout.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontFamily = vag,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    // Color dot
+                    workout.colorHex?.let { colorHex ->
+                        Box(
+                            modifier = Modifier
+                                .size(12.dp)
+                                .background(
+                                    color = Color(android.graphics.Color.parseColor(colorHex)),
+                                    shape = CircleShape
+                                )
+                        )
+                    }
+                }
+
                 Text(
                     text = "${workout.exercises.size} exercises",
                     style = MaterialTheme.typography.bodyMedium,
                     color = Color.Gray
                 )
             }
-
             Row(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,

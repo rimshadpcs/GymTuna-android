@@ -1,5 +1,6 @@
 package com.rimapps.gymlog.presentation.exercise
 
+import android.util.Log
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -34,7 +35,6 @@ fun ExerciseSearchScreen(
     viewModel: ExerciseSearchViewModel = hiltViewModel(),
     onExerciseClick: (Exercise) -> Unit
 ) {
-
     var searchQuery by remember { mutableStateOf("") }
     val exercises by viewModel.exercises.collectAsStateWithLifecycle()
 
@@ -85,15 +85,44 @@ fun ExerciseSearchScreen(
             )
         }
 
-        // Exercise List
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            items(exercises.sortedBy { it.name }) { exercise ->
-                ExerciseSearchItem(
-                    exercise = exercise,
-                    onClick = { onExerciseClick(exercise) }
-                )
+        // Exercise List or No Results
+        if (exercises.isEmpty() && searchQuery.isNotBlank()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.gym),
+                        contentDescription = "No results",
+                        modifier = Modifier.size(48.dp),
+                        tint = Color.Gray
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        "No exercises found",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.Gray,
+                        fontFamily = vag,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        } else {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(exercises) { exercise ->
+                    ExerciseSearchItem(
+                        exercise = exercise,
+                        onClick = { onExerciseClick(exercise) }
+                    )
+                }
             }
         }
     }

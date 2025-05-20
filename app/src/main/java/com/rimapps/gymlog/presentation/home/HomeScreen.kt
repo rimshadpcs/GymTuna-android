@@ -1,5 +1,7 @@
 package com.rimapps.gymlog.presentation.home
 
+import android.os.Build
+import androidx.annotation.RequiresApi
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -30,6 +32,7 @@ import com.rimapps.gymlog.domain.model.Workout
 import com.rimapps.gymlog.domain.model.WorkoutState
 import com.rimapps.gymlog.ui.theme.vag
 
+@RequiresApi(Build.VERSION_CODES.O)
 @Composable
 fun HomeScreen(
     onSignOut: () -> Unit,
@@ -39,10 +42,11 @@ fun HomeScreen(
     onEditRoutine: (String) -> Unit,
     onNewRoutine: () -> Unit,
     onNavigateToSearch: () -> Unit,
-    onNavigateToSettings: () -> Unit
+    onNavigateToSettings: () -> Unit,
+    onNavigateToHistory : () -> Unit
 ) {
     val workoutState by viewModel.workoutState.collectAsStateWithLifecycle()
-
+    val weeklyCalendar by viewModel.weeklyCalendar.collectAsStateWithLifecycle()
  Column(
         modifier = Modifier
             .fillMaxSize()
@@ -52,13 +56,14 @@ fun HomeScreen(
     ) {
      TopBar(onSettingsClick = onNavigateToSettings)
 
-     QuickStartSection(
-            onStartEmptyWorkout = onStartEmptyWorkout
-        )
+     WeeklyCalendarStrip(
+         weeklyCalendar = weeklyCalendar,
+         modifier = Modifier.padding(vertical = 16.dp),
+         onHistoryClick = onNavigateToHistory
+     )
 
-        RoutinesSection(
-            onNewRoutine = onNewRoutine
-        )
+     QuickActionsSection(onStartEmptyWorkout = onStartEmptyWorkout, onNewRoutine = onNewRoutine)
+
 
         // Fixed WorkoutsList call with proper parameters
      WorkoutsList(
@@ -95,7 +100,7 @@ fun TopBar(onSettingsClick: () -> Unit) {
             )
             Spacer(modifier = Modifier.width(8.dp))
             Text(
-                text = "GYM LOG",
+                text = "Just log",
                 style = MaterialTheme.typography.titleLarge,
                 fontFamily = vag,
                 fontWeight = FontWeight.Bold,
@@ -137,69 +142,27 @@ fun TopBar(onSettingsClick: () -> Unit) {
     }
 }
 @Composable
-fun QuickStartSection(onStartEmptyWorkout: () -> Unit) {
+fun QuickActionsSection(
+    onStartEmptyWorkout: () -> Unit,
+    onNewRoutine: () -> Unit
+) {
     Text(
-        text = "Quick Start",
+        text = "Quick Actions",
         style = MaterialTheme.typography.titleLarge,
         color = Color.Black,
         fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.padding(vertical = 16.dp)
+        modifier = Modifier.padding(bottom = 16.dp)
     )
-
-    Button(
-        onClick = { onStartEmptyWorkout() },
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(56.dp),
-        colors = ButtonDefaults.buttonColors(
-            containerColor = Color.White,
-            contentColor = Color.Black
-        ),
-        border = BorderStroke(1.dp, Color.Black),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Row(
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = "Start Empty Workout"
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                "Start Empty Workout",
-                fontFamily = vag,
-                fontWeight = FontWeight.SemiBold
-            )
-        }
-    }
-}
-@Composable
-fun RoutinesSection(onNewRoutine: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 16.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(
-            text = "Routines",
-            style = MaterialTheme.typography.titleLarge,
-            color = Color.Black,
-            fontWeight = FontWeight.SemiBold
-        )
-    }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
+        // Quick Start Button
         Button(
-            onClick = { onNewRoutine() },
+            onClick = onStartEmptyWorkout,
             modifier = Modifier
-                .fillMaxWidth()
+                .weight(1f)
                 .height(56.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = Color.White,
@@ -208,16 +171,42 @@ fun RoutinesSection(onNewRoutine: () -> Unit) {
             border = BorderStroke(1.dp, Color.Black),
             shape = RoundedCornerShape(12.dp)
         ) {
-            Row(
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = "Quick Start"
+                )
+                Text(
+                    "Quick Start",
+                    fontFamily = vag,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+
+        // New Routine Button
+        Button(
+            onClick = onNewRoutine,
+            modifier = Modifier
+                .weight(1f)
+                .height(56.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color.White,
+                contentColor = Color.Black
+            ),
+            border = BorderStroke(1.dp, Color.Black),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Image(
                     painter = painterResource(id = R.drawable.gym),
-                    contentDescription = "dumbbell",
-                    modifier = Modifier.size(32.dp)
+                    contentDescription = "New Routine",
+                    modifier = Modifier.size(24.dp)
                 )
-                Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     "New Routine",
                     fontFamily = vag,

@@ -3,6 +3,7 @@ package com.rimapps.gymlog.presentation.home
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.rimapps.gymlog.domain.model.WeeklyCalendarDay
 import com.rimapps.gymlog.domain.model.Workout
 import com.rimapps.gymlog.domain.model.WorkoutState
 import com.rimapps.gymlog.domain.repository.AuthRepository
@@ -28,6 +29,30 @@ class HomeViewModel @Inject constructor(
     private val _currentWorkout = MutableStateFlow<Workout?>(null)
     val currentWorkout: StateFlow<Workout?> = _currentWorkout.asStateFlow()
 
+    private val _weeklyCalendar = MutableStateFlow<List<WeeklyCalendarDay>>(emptyList())
+    val weeklyCalendar: StateFlow<List<WeeklyCalendarDay>> = _weeklyCalendar.asStateFlow()
+    init {
+        viewModelScope.launch {
+            try {
+                val userId = authRepository.getCurrentUser()?.uid
+                    ?: throw Exception("User not authenticated")
+
+                // Add debug logging
+                Log.d(TAG, "Starting to collect weekly calendar data")
+                workoutRepository.getWeeklyCalendar().collect { calendar ->
+                    Log.d(TAG, "Received calendar data: ${calendar.size} days")
+                    _weeklyCalendar.value = calendar
+
+                    calendar.forEach {
+                        Log.d(TAG, "Day ${it.date}  colorHex=${it.colorHex}")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error collecting calendar data", e)
+                _workoutState.value = WorkoutState.Error(e.message ?: "Unknown error")
+            }
+        }
+    }
     init {
         loadWorkouts()
     }
@@ -79,35 +104,38 @@ class HomeViewModel @Inject constructor(
             }
         }
     }
-    fun startWorkout(workoutId: String?) {
-        viewModelScope.launch {
-            try {
-                val userId = authRepository.getCurrentUser()?.uid
-                    ?: throw Exception("User not authenticated")
-
-                workoutId?.let {
-                    when (val state = _workoutState.value) {
-                        is WorkoutState.Success -> {
-                            _currentWorkout.value = state.workouts.find { it.id == workoutId }
-                        }
-                        else -> {
-                            Log.w(TAG, "Attempted to start workout while not in success state")
-                        }
-                    }
-                } ?: run {
-                    _currentWorkout.value = Workout(
-                        id = UUID.randomUUID().toString(),
-                        name = "Quick Workout",
-                        userId = userId,
-                        exercises = emptyList()
-                    )
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Error starting workout", e)
-                _workoutState.value = WorkoutState.Error("Failed to start workout: ${e.message}")
-            }
-        }
-    }
+//    fun startWorkout(workoutId: String?) {
+//        viewModelScope.launch {
+//            try {
+//                val userId = authRepository.getCurrentUser()?.uid
+//                    ?: throw Exception("User not authenticated")
+//
+//                workoutId?.let {
+//                    when (val state = _workoutState.value) {
+//                        is WorkoutState.Success -> {
+//                            _currentWorkout.value = state.workouts.find { it.id == workoutId }
+//                        }
+//                        else -> {
+//                            Log.w(TAG, "Attempted to start workout while not in success state")
+//                        }
+//                    }
+//                } ?: run {
+//                    _currentWorkout.value = Workout(
+//                        id = UUID.randomUUID().toString(),
+//                        name = "Quick Workout",
+//                        userId = userId,
+//                        exercises = emptyList(),
+//                        createdAt = TODO(),
+//                        colorHex = TODO(),
+//                        lastPerformed = TODO()
+//                    )
+//                }
+//            } catch (e: Exception) {
+//                Log.e(TAG, "Error starting workout", e)
+//                _workoutState.value = WorkoutState.Error("Failed to start workout: ${e.message}")
+//            }
+//        }
+//    }
 
     fun signOut() {
         viewModelScope.launch {
